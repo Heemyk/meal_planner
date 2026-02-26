@@ -1,62 +1,32 @@
+@import "tailwindcss";
+
 body {
-  font-family: "Inter", system-ui, sans-serif;
-  margin: 0;
-  background: #f6f7fb;
-  color: #1f2a37;
+  font-family: "DM Sans", system-ui, sans-serif;
 }
 
-.container {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 32px 16px 64px;
+/* Custom animations */
+@keyframes aurora {
+  from {
+    background-position: 50% 50%, 50% 50%;
+  }
+  to {
+    background-position: 350% 50%, 350% 50%;
+  }
 }
 
-header {
-  margin-bottom: 24px;
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
 }
 
-.card {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 10px 20px rgba(31, 42, 55, 0.08);
-  margin-bottom: 24px;
+.animate-aurora {
+  animation: aurora 60s linear infinite;
 }
 
-input[type="file"],
-input[type="number"] {
-  display: block;
-  margin: 8px 0 16px;
-  padding: 8px;
-  border-radius: 8px;
-  border: 1px solid #d2d6db;
-  width: 100%;
-  max-width: 320px;
-}
-
-button {
-  background: #3b82f6;
-  color: white;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-button:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-}
-
-.output {
-  background: #111827;
-  color: #e5e7eb;
-  padding: 12px;
-  border-radius: 8px;
-  overflow: auto;
-}
-
-.error {
-  color: #b91c1c;
-  font-weight: 600;
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
 }

@@ -7,6 +7,7 @@ from app.config import settings
 from app.logging import get_logger
 from app.storage.db import get_session
 from app.storage.repositories import log_llm_call
+from app.utils.timing import _format_duration
 
 logger = get_logger(__name__)
 
@@ -34,7 +35,7 @@ def configure_dspy() -> None:
 
 def run_with_logging(prompt_name: str, prompt_version: str, fn: Any, **kwargs: Any) -> Any:
     start = time.time()
-    logger.info("llm.call.start name=%s version=%s", prompt_name, prompt_version)
+    logger.info("[TIMING] llm.call.start name=%s version=%s", prompt_name, prompt_version)
     result = fn(**kwargs)
     latency_ms = int((time.time() - start) * 1000)
     with get_session() as session:
@@ -48,7 +49,12 @@ def run_with_logging(prompt_name: str, prompt_version: str, fn: Any, **kwargs: A
             latency_ms=latency_ms,
         )
     _log_last_prompt(prompt_name)
-    logger.info("llm.call.end name=%s latency_ms=%s", prompt_name, latency_ms)
+    logger.info(
+        "[TIMING] llm.call.end name=%s latency_ms=%s (%s)",
+        prompt_name,
+        latency_ms,
+        _format_duration(latency_ms),
+    )
     return result
 
 

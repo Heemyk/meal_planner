@@ -1,6 +1,6 @@
 INGREDIENT_MATCH_PROMPT_VERSION = "v2"
-UNIT_NORMALIZE_PROMPT_VERSION = "v2"
-SKU_FILTER_PROMPT_VERSION = "v2"
+UNIT_NORMALIZE_PROMPT_VERSION = "v3"
+SKU_FILTER_PROMPT_VERSION = "v3"
 
 INGREDIENT_MATCH_TEMPLATE = """You are matching an ingredient line to a canonical ingredient list.
 Return a decision with:
@@ -27,7 +27,9 @@ Return:
 - normalized_qty: numeric amount for this line in base units
 - normalized_unit: must equal base_unit
 
-Unit selection rules (convert between MEASUREMENT UNITS only, never convert ingredients to other ingredients):
+If the line already uses a standard unit (tbsp, tsp, cup, ml, g, oz, lb, count), keep that unit and set normalized_qty to the numeric amount from the line. Do not convert unnecessarily (e.g. "2 tablespoons" → base_unit=tbsp, normalized_qty=2.0, not 30).
+
+Unit selection rules when conversion is needed:
 - Weight (flour, sugar, meat, butter by weight): prefer g
 - Volume (oil, milk, juice, herbs/spices by spoon): prefer ml
 - Whole countable items (lemons, eggs, cloves, apples): prefer count
@@ -37,9 +39,22 @@ Use the conversion ontology for unit-to-unit conversions only. Do NOT convert in
 If the line is 'to taste' or unspecified, return 0 for normalized_qty.
 """
 
-SKU_FILTER_TEMPLATE = """Given a query and candidate SKU list, select the items that truly match the query.
-Prefer matches on ingredient name and avoid unrelated branded drinks or snacks.
-Return selected as a list of candidate objects (subset)."""
+SKU_FILTER_TEMPLATE = """Given a query and candidate SKU list, select ONLY the items that truly match the query.
+
+STRICT rules — EXCLUDE any candidate that:
+1. Is a processed/derived product when the query is the raw ingredient:
+   - Query "lemons" → EXCLUDE lemon juice, lemonade, lemon curd, lemon pie filling
+   - Query "chicken" → EXCLUDE chicken broth, chicken stock, cooked chicken
+   - Query "garlic" → EXCLUDE garlic powder, garlic salt (unless query says powder/salt)
+2. Is a beverage when the query is a solid/whole ingredient (e.g. "apples" excludes apple juice)
+3. Is a different form: fresh vs dried, whole vs minced/juice, raw vs cooked
+4. Is tangentially related (e.g. "lemons" excludes lemon-flavored items, lemon zest alone)
+
+INCLUDE only when:
+- The product form matches the query (lemons → whole lemons; lemon juice → bottled/carton juice)
+- The ingredient identity is the same (not a substitute or processed variant)
+
+Return selected as a list of candidate objects (subset). If no candidates match strictly, return an empty list []."""
 
 UNIT_CONVERSION_ONTOLOGY = """Unit-to-unit conversions only (do not convert ingredients to weight/volume):
 - 1 tablespoon = 1 tbsp = 3 tsp = 15 ml

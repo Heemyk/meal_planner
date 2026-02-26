@@ -3,8 +3,22 @@ from dataclasses import dataclass
 from typing import List
 
 from app.logging import get_logger
+from app.storage.models import MEAL_TYPES
 
 logger = get_logger(__name__)
+
+
+def infer_meal_type(name: str, instructions: str = "") -> str:
+    """Infer meal_type from recipe name and instructions. Default: entree."""
+    combined = f"{name} {instructions}".lower()
+    if any(k in combined for k in ["dessert", "cake", "pie", "cookie", "ice cream", "pudding", "tart", "sorbet"]):
+        return "dessert"
+    if any(k in combined for k in ["salad", "soup", "dip", "appetizer", "appetiser", "starter", "hors d", "bruschetta"]):
+        return "appetizer"
+    if any(k in combined for k in ["side", "potato", "asparagus", "vegetable side", "rice side", "bread"]):
+        return "side"
+    return "entree"
+
 
 @dataclass
 class ParsedRecipe:

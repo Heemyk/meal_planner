@@ -9,6 +9,41 @@ def test_health(client):
     assert response.json()["status"] == "ok"
 
 
+def test_allergens_endpoint(client):
+    response = client.get("/api/allergens")
+    assert response.status_code == 200
+    data = response.json()
+    assert "allergens" in data
+    assert isinstance(data["allergens"], list)
+    assert "milk" in data["allergens"]
+    assert len(data["allergens"]) == 10
+
+
+def test_recipes_list_exclude_allergens(client, session):
+    r1 = Recipe(name="A", servings=2, instructions="Cook", source_file="x", allergens=["milk"])
+    r2 = Recipe(name="B", servings=2, instructions="Cook", source_file="x", allergens=["wheat"])
+    session.add(r1)
+    session.add(r2)
+    session.commit()
+    response = client.get("/api/recipes?exclude_allergens=milk")
+    assert response.status_code == 200
+    recipes = response.json()
+    assert len(recipes) == 1
+    assert recipes[0]["name"] == "B"
+    assert recipes[0]["allergens"] == ["wheat"]
+
+
+def test_recipes_list_returns_allergens(client, session):
+    r = Recipe(name="Milk Dish", servings=2, instructions="Cook", source_file="x", allergens=["milk"])
+    session.add(r)
+    session.commit()
+    response = client.get("/api/recipes")
+    assert response.status_code == 200
+    recipes = response.json()
+    assert len(recipes) == 1
+    assert recipes[0]["allergens"] == ["milk"]
+
+
 def test_recipe_upload(client, monkeypatch):
     monkeypatch.setattr(
         "app.api.recipes.match_ingredient",
@@ -84,3 +119,24 @@ def test_plan_endpoint(client, session):
     assert response.status_code == 200
     payload = response.json()
     assert "plan_payload" in payload
+    assert "status" in payload
+
+
+def test_plan_with_custom_options(client, session):
+    recipe = Recipe(name="Test", servings=2, instructions="Cook", source_file="unit")
+    session.add(recipe)
+    session.commit()
+    session.refresh(recipe)
+    ing = Ingredient(name="milk", canonical_name="milk", base_unit="ml", base_unit_qty=1.0)
+    session.add(ing)
+    session.commit()
+    session.refresh(ing)
+    session.add(RecipeIngredient(recipe_id=recipe.id, ingredient_id=ing.id, quantity=100, unit="ml", original_text="100 ml milk"))
+    session.add(SKU(ingredient_id=ing.id, name="Milk", size="1000 ml", price=2.0, retailer_slug="test", postal_code="10001", expires_at=__import__("datetime").datetime.utcnow() + __import__("datetime").timedelta(hours=1)))
+    session.commit()
+    response = client.post(
+        "/api/plan",
+        json={"target_servings": 2, "time_limit_seconds": 5, "batch_penalty": 0.0001},
+    )
+    assert response.status_code == 200
+    assert response.json().get("status") in ("Optimal", "Not Solved")

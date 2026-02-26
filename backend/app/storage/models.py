@@ -1,7 +1,11 @@
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
+
+
+MEAL_TYPES = ("appetizer", "entree", "dessert", "side")
 
 
 class Recipe(SQLModel, table=True):
@@ -10,6 +14,8 @@ class Recipe(SQLModel, table=True):
     servings: int
     instructions: str
     source_file: str
+    meal_type: str = "entree"  # appetizer | entree | dessert | side
+    allergens: Optional[list] = Field(default=None, sa_column=Column(JSON, default=None))  # set on upload
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

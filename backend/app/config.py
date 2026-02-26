@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     default_postal_code: str = "10001"
     sku_cache_ttl_hours: int = 24
 
+    # Tune parallelism: ThreadPoolExecutor workers for ingredient match+normalize per recipe.
+    # Set INGREDIENT_BATCH_MAX_WORKERS in .env to override.
+    ingredient_batch_max_workers: int = 8
+
+    # Celery prefork concurrency for fetch_skus_for_ingredient tasks.
+    celery_worker_concurrency: int = 10
+
+    # Hybrid ingredient matching: above this count, use embedding retrieval for top-k
+    ingredient_match_full_context_threshold: int = 20
+    ingredient_retrieval_top_k: int = 10
+
     class Config:
         env_file = ".env"
 

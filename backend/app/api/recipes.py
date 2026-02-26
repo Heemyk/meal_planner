@@ -1,9 +1,12 @@
+import io
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Tuple
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 from sqlmodel import select
 
+from app.config import settings
 from app.logging import get_logger
 from app.utils.timing import time_span
 from app.schemas.recipe import RecipeUploadResponse
@@ -11,7 +14,8 @@ from app.services.graph.graph_queries import link_recipe_ingredient, upsert_ingr
 from app.services.llm.dspy_client import configure_dspy
 from app.services.llm.ingredient_matcher import match_ingredient
 from app.services.llm.unit_normalizer import normalize_units
-from app.services.parsing.recipe_parser import parse_recipe_text
+from app.services.allergens import infer_allergens_from_ingredients
+from app.services.parsing.recipe_parser import infer_meal_type, parse_recipe_text
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient
 from app.storage.repositories import create_recipe, create_recipe_ingredients, get_ingredients, get_or_create_ingredient
@@ -27,14 +31,37 @@ def _match_and_normalize(ingredient_text: str, existing_names: list[str]) -> Tup
     return match, normalized
 
 
+def _expand_files(content: bytes, filename: str) -> list[tuple[bytes, str]]:
+    """Expand upload into list of (content, filename). Extracts .zip files."""
+    if filename.lower().endswith(".zip"):
+        out = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                for name in zf.namelist():
+                    if name.endswith("/") or not name.lower().endswith(".txt"):
+                        continue
+                    data = zf.read(name)
+                    base = name.split("/")[-1]
+                    out.append((data, base or name))
+            return out
+        except zipfile.BadZipFile:
+            logger.warning("recipes: bad zip file, skipping: %s", filename)
+            return []
+    return [(content, filename)]
+
+
 @router.post("/recipes/upload", response_model=RecipeUploadResponse)
-async def upload_recipes(files: list[UploadFile] = File(...)) -> RecipeUploadResponse:
+async def upload_recipes(
+    files: list[UploadFile] = File(...),
+    postal_code: str | None = Form(default=None),
+) -> RecipeUploadResponse:
     with time_span("recipes.upload.total", files=len(files)):
         configure_dspy()
+        effective_postal = (postal_code or "").strip() or settings.default_postal_code
         recipes_created = 0
         ingredients_created = 0
         sku_jobs = 0
-        logger.info("recipes.upload.start files=%s", len(files))
+        logger.info("recipes.upload.start files=%s postal=%s", len(files), effective_postal)
 
         with get_session() as session:
             existing = get_ingredients(session)
@@ -43,23 +70,32 @@ async def upload_recipes(files: list[UploadFile] = File(...)) -> RecipeUploadRes
 
             for upload in files:
                 content = await upload.read()
-                parsed_recipes = parse_recipe_text(content.decode("utf-8"))
-                for parsed in parsed_recipes:
-                    recipe = create_recipe(
-                        session,
-                        Recipe(
-                            name=parsed.name,
-                            servings=parsed.servings,
-                            instructions=parsed.instructions,
-                            source_file=upload.filename or "upload",
-                        ),
-                    )
+                fn = upload.filename or "upload"
+                for file_content, source_name in _expand_files(content, fn):
+                    parsed_recipes = parse_recipe_text(file_content.decode("utf-8"))
+                    for parsed in parsed_recipes:
+                        meal_type = infer_meal_type(parsed.name, parsed.instructions)
+                        recipe = create_recipe(
+                            session,
+                            Recipe(
+                                name=parsed.name,
+                                servings=parsed.servings,
+                                instructions=parsed.instructions,
+                                source_file=source_name,
+                                meal_type=meal_type,
+                            ),
+                        )
                     recipes_created += 1
                     upsert_recipe(recipe_id=recipe.id, name=recipe.name, servings=recipe.servings)
 
                     recipe_ingredients: list[RecipeIngredient] = []
+                    recipe_ingredient_names: list[str] = []
                     current_existing = list(existing_names)
-                    max_workers = min(8, max(1, len(parsed.ingredients)))
+                    # ThreadPoolExecutor: threads (true parallelism for I/O-bound LLM calls), not asyncio
+                    max_workers = min(
+                        settings.ingredient_batch_max_workers,
+                        max(1, len(parsed.ingredients)),
+                    )
                     logger.info(
                         "ingredient.batch.start recipe=%s workers=%s count=%s",
                         parsed.name,
@@ -104,7 +140,9 @@ async def upload_recipes(files: list[UploadFile] = File(...)) -> RecipeUploadRes
                                 ingredient.canonical_name,
                                 ingredient.base_unit,
                             )
-                            fetch_skus_for_ingredient.delay(ingredient.id, canonical_name)
+                            fetch_skus_for_ingredient.delay(
+                                ingredient.id, canonical_name, effective_postal
+                            )
                             sku_jobs += 1
 
                         recipe_ingredients.append(
@@ -116,12 +154,18 @@ async def upload_recipes(files: list[UploadFile] = File(...)) -> RecipeUploadRes
                                 original_text=ingredient_text,
                             )
                         )
+                        recipe_ingredient_names.append(canonical_name)
                         upsert_ingredient(ingredient_id=ingredient.id, name=ingredient.canonical_name)
                         link_recipe_ingredient(
                             recipe_id=recipe.id, ingredient_id=ingredient.id, qty=normalized["normalized_qty"]
                         )
 
                     create_recipe_ingredients(session, recipe_ingredients)
+
+                    # Set allergens from ingredients (meal initialisation)
+                    recipe.allergens = infer_allergens_from_ingredients(recipe_ingredient_names)
+                    session.add(recipe)
+                    session.commit()
 
             total_recipes = len(list(session.exec(select(Recipe))))
             total_ingredients = len(list(session.exec(select(Ingredient))))

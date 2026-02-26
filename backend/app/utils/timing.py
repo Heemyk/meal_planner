@@ -8,6 +8,16 @@ from app.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Prefix for all timing logs so they stand out and are easy to grep
+_TIMING_PREFIX = "[TIMING]"
+
+
+def _format_duration(ms: int) -> str:
+    """Return human-readable duration: e.g. 12500 -> '12.5s', 750 -> '750ms'."""
+    if ms >= 1000:
+        return f"{ms / 1000:.1f}s"
+    return f"{ms}ms"
+
 
 class TimingTracker:
     """Track elapsed time for named spans with optional logging."""
@@ -28,7 +38,13 @@ class TimingTracker:
             return 0
         self._elapsed_ms = int((time.perf_counter() - self._start) * 1000)
         if self.log_on_exit:
-            logger.info("timing.%s elapsed_ms=%s", self.name, self._elapsed_ms)
+            logger.info(
+                "%s %s elapsed_ms=%s (%s)",
+                _TIMING_PREFIX,
+                self.name,
+                self._elapsed_ms,
+                _format_duration(self._elapsed_ms),
+            )
         return self._elapsed_ms
 
     @property
@@ -56,5 +72,7 @@ def time_span(name: str, **extra: object):
         yield t
     finally:
         elapsed = t.stop()
-        parts = [f"elapsed_ms={elapsed}"] + [f"{k}={v}" for k, v in extra.items()]
-        logger.info("timing.%s %s", name, " ".join(parts))
+        parts = [f"elapsed_ms={elapsed}", f"({_format_duration(elapsed)})"] + [
+            f"{k}={v}" for k, v in extra.items()
+        ]
+        logger.info("%s %s %s", _TIMING_PREFIX, name, " ".join(parts))

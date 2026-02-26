@@ -7,16 +7,80 @@ from sqlmodel import select
 from app.logging import get_logger
 from app.schemas.plan import PlanRequest, PlanResponse
 from app.utils.timing import time_span
-from app.services.optimization.ilp_solver import IngredientOption, RecipeOption, solve_ilp
+from app.services.optimization.ilp_solver import ILPSolverOptions, IngredientOption, RecipeOption, solve_ilp
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
+from app.services.allergens import get_all_allergen_codes
 from app.storage.repositories import create_menu_plan
 
 router = APIRouter()
 logger = get_logger(__name__)
 
+
+@router.get("/allergens")
+def list_allergens():
+    """Return allergen codes for filter UI."""
+    return {"allergens": get_all_allergen_codes()}
+
 PLACEHOLDER_COST = 1.0
 PLACEHOLDER_QTY = 999999.0
+
+
+@router.get("/recipes")
+def list_recipes(exclude_allergens: str | None = None):
+    """
+    Return all recipes for display.
+    exclude_allergens: comma-separated allergen codes to filter out (e.g. nuts,milk).
+    """
+    with get_session() as session:
+        recipes = list(session.exec(select(Recipe)))
+        exclude_set = set()
+        if exclude_allergens:
+            exclude_set = {a.strip().lower() for a in exclude_allergens.split(",") if a.strip()}
+        result = []
+        for r in recipes:
+            allergens = (r.allergens or []) if hasattr(r, "allergens") else []
+            if exclude_set and set(allergens) & exclude_set:
+                continue
+            result.append({
+                "id": r.id,
+                "name": r.name,
+                "servings": r.servings,
+                "instructions": r.instructions,
+                "source_file": r.source_file,
+                "meal_type": getattr(r, "meal_type", "entree"),
+                "allergens": allergens,
+            })
+        return result
+
+
+@router.get("/ingredients-with-skus")
+def ingredients_with_skus():
+    """Return all ingredients with their attached SKUs for display."""
+    with get_session() as session:
+        ingredients = list(session.exec(select(Ingredient)))
+        skus = list(session.exec(select(SKU)))
+        now = datetime.utcnow()
+        valid_skus = [s for s in skus if s.expires_at > now]
+        skus_by_ingredient: dict[int, list] = {}
+        for s in valid_skus:
+            skus_by_ingredient.setdefault(s.ingredient_id, []).append({
+                "id": s.id,
+                "name": s.name,
+                "brand": s.brand,
+                "size": s.size,
+                "price": s.price,
+                "retailer_slug": s.retailer_slug,
+            })
+        return [
+            {
+                "id": i.id,
+                "name": i.canonical_name,
+                "base_unit": i.base_unit,
+                "skus": skus_by_ingredient.get(i.id, []),
+            }
+            for i in ingredients
+        ]
 
 
 @router.get("/sku-status")
@@ -42,6 +106,12 @@ def plan(request: PlanRequest) -> PlanResponse:
         logger.info("plan.start servings=%s", request.target_servings)
         with get_session() as session:
             recipes = list(session.exec(select(Recipe)))
+            if request.exclude_allergens:
+                exclude_set = {a.strip().lower() for a in request.exclude_allergens if a.strip()}
+                recipes = [
+                    r for r in recipes
+                    if not (set(r.allergens or []) & exclude_set)
+                ]
             recipe_ingredients = list(session.exec(select(RecipeIngredient)))
             skus = list(session.exec(select(SKU)))
             now = datetime.utcnow()
@@ -64,9 +134,17 @@ def plan(request: PlanRequest) -> PlanResponse:
                     )
                 )
 
+            store_slugs = None
+            if request.store_slugs:
+                store_slugs = [s.lower().strip().replace(" ", "-") for s in request.store_slugs if s]
+
             sku_options = []
             ingredient_ids_with_options = set()
             for sku in valid_skus:
+                if store_slugs:
+                    slug = (sku.retailer_slug or "").lower()
+                    if slug not in store_slugs:
+                        continue
                 sku_options.append(
                     IngredientOption(
                         ingredient_id=sku.ingredient_id,
@@ -91,12 +169,54 @@ def plan(request: PlanRequest) -> PlanResponse:
                         )
                     )
 
-            result = solve_ilp(request.target_servings, recipe_options, sku_options)
+            recipe_meal_types = {r.id: getattr(r, "meal_type", "entree") for r in recipes}
+            meal_config = request.meal_config or {}
+
+            # Check feasibility: all required ingredients must have at least one SKU from selected stores
+            missing_with_store = all_required_ingredient_ids - ingredient_ids_with_options
+            if store_slugs and missing_with_store:
+                return PlanResponse(
+                    status="Infeasible",
+                    objective=None,
+                    plan_payload={},
+                    sku_details={},
+                    recipe_details=[],
+                    consolidated_shopping_list=[],
+                    menu_card=[],
+                    infeasible_reason="Some ingredients have no SKUs from selected stores. Relax the store filter.",
+                )
+            if store_slugs and not sku_options and all_required_ingredient_ids:
+                return PlanResponse(
+                    status="Infeasible",
+                    objective=None,
+                    plan_payload={},
+                    sku_details={},
+                    recipe_details=[],
+                    consolidated_shopping_list=[],
+                    menu_card=[],
+                    infeasible_reason="No SKUs from selected stores. Try relaxing the store filter.",
+                )
+
+            solver_opts = None
+            if request.time_limit_seconds is not None or request.batch_penalty is not None:
+                solver_opts = ILPSolverOptions(
+                    time_limit_seconds=request.time_limit_seconds if request.time_limit_seconds is not None else 10,
+                    batch_penalty=request.batch_penalty if request.batch_penalty is not None else 0.0001,
+                )
+            result = solve_ilp(
+                request.target_servings,
+                recipe_options,
+                sku_options,
+                solver_opts,
+                recipe_meal_types=recipe_meal_types,
+                meal_config=meal_config,
+            )
             plan_payload = {
                 "recipes": {str(k): int(v) if v is not None else 0 for k, v in (result["recipes"] or {}).items()},
                 "skus": {str(k): int(v) if v is not None else 0 for k, v in (result["skus"] or {}).items()},
             }
-            create_menu_plan(session, request.target_servings, str(plan_payload))
+            if result.get("status") != "Infeasible":
+                create_menu_plan(session, request.target_servings, str(plan_payload))
 
             # Build sku_details for display (name, brand, retailer)
             sku_by_id = {str(s.id): s for s in valid_skus}
@@ -113,15 +233,72 @@ def plan(request: PlanRequest) -> PlanResponse:
                         "quantity": int(qty),
                     }
 
+            # Build recipe_details, consolidated_shopping_list, menu_card
+            recipe_by_id = {r.id: r for r in recipes}
+            recipe_details_list: list[dict] = []
+            ingredient_totals: dict[int, float] = {}
+            menu_card_list: list[dict] = []
+
+            for rid, batches in (result.get("recipes") or {}).items():
+                bid = int(rid)
+                if not batches:
+                    continue
+                recipe = recipe_by_id.get(bid)
+                if not recipe:
+                    continue
+                recipe_details_list.append({
+                    "recipe_id": bid,
+                    "name": recipe.name,
+                    "batches": int(batches),
+                    "servings_per_batch": recipe.servings,
+                    "total_servings": int(batches) * recipe.servings,
+                })
+                scale = int(batches)
+                for ri in recipe_ingredients:
+                    if ri.recipe_id != bid:
+                        continue
+                    ingredient_totals[ri.ingredient_id] = ingredient_totals.get(ri.ingredient_id, 0) + ri.quantity * scale
+                first_line = (recipe.instructions or "").split(".")[0].strip()
+                if first_line:
+                    first_line += "."
+                menu_card_list.append({
+                    "name": recipe.name,
+                    "ingredients": [
+                        ri.original_text for ri in recipe_ingredients
+                        if ri.recipe_id == bid
+                    ],
+                    "description": first_line or f"A delicious {recipe.name}.",
+                })
+
+            ingredients_by_id = {i.id: i for i in session.exec(select(Ingredient))}
+            consolidated_shopping_list: list[dict] = []
+            for ing_id, total_qty in ingredient_totals.items():
+                ing = ingredients_by_id.get(ing_id)
+                if not ing:
+                    continue
+                consolidated_shopping_list.append({
+                    "ingredient": ing.canonical_name,
+                    "quantity": round(total_qty, 2),
+                    "unit": ing.base_unit or "units",
+                })
+
+        status = result.get("status", "Unknown")
         objective_val = result.get("objective")
         if objective_val is None:
             objective_val = 0.0
-        logger.info("plan.end status=%s objective=%s", result["status"], objective_val)
+        infeasible_reason = None
+        if status == "Infeasible":
+            infeasible_reason = "Optimization not possible. Relax meal-type or store constraints."
+        logger.info("plan.end status=%s objective=%s", status, objective_val)
         return PlanResponse(
-            status=result["status"],
+            status=status,
             objective=float(objective_val),
+            infeasible_reason=infeasible_reason,
             plan_payload=plan_payload,
-            sku_details=sku_details,
+            sku_details=sku_details if status != "Infeasible" else {},
+            recipe_details=recipe_details_list if status != "Infeasible" else [],
+            consolidated_shopping_list=consolidated_shopping_list if status != "Infeasible" else [],
+            menu_card=menu_card_list if status != "Infeasible" else [],
         )
 
 
