@@ -14,6 +14,7 @@ import { AppBackground } from "./components/AppBackground.jsx";
 import { ProgressBar, SegmentedProgressBar } from "./components/ProgressBar.jsx";
 import { IngredientCard } from "./components/IngredientCard.jsx";
 import { RecipeCard } from "./components/RecipeCard.jsx";
+import { RecipeDetailModal } from "./components/RecipeDetailModal.jsx";
 import { MenuCardEditor } from "./components/MenuCardEditor.jsx";
 import { cn } from "./lib/utils.js";
 
@@ -25,6 +26,15 @@ const MENU_THEME_STYLES = {
   dessert: { borderColor: "hsl(340 70% 55%)", accentBg: "hsl(340 70% 55% / 0.06)" },
   side: { borderColor: "hsl(150 60% 40%)", accentBg: "hsl(150 60% 40% / 0.06)" },
 };
+
+/** Strip rationale/extra text from unit; return canonical unit only. */
+function sanitizeUnit(unit) {
+  if (unit == null || typeof unit !== "string") return "";
+  const s = unit.trim().toLowerCase();
+  const canonical = ["g", "ml", "count", "tbsp", "tsp", "units"];
+  const first = s.split(/\s|\(|,|\)/)[0]?.trim() ?? "";
+  return canonical.includes(first) ? first : (first || "units");
+}
 
 export default function App() {
   const [files, setFiles] = useState([]);
@@ -55,6 +65,7 @@ export default function App() {
   const [materialsData, setMaterialsData] = useState(null);
   const [materialsLoading, setMaterialsLoading] = useState(false);
   const [expandedInstructions, setExpandedInstructions] = useState(-1);
+  const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [search, setSearch] = useState("");
   const [activeMealFilter, setActiveMealFilter] = useState("all");
 
@@ -471,7 +482,12 @@ export default function App() {
             ) : (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {filteredRecipes.map((rec, i) => (
-                  <RecipeCard key={rec.id} recipe={rec} index={i} />
+                  <RecipeCard
+                    key={rec.id}
+                    recipe={rec}
+                    index={i}
+                    onClick={() => setSelectedRecipe(rec)}
+                  />
                 ))}
               </div>
             )}
@@ -796,14 +812,19 @@ export default function App() {
                   <div className="rounded-xl border border-border bg-secondary/30 p-5">
                     <h3 className="font-display font-semibold text-foreground mb-4">Consolidated shopping list</h3>
                     <ul className="space-y-2">
-                      {planResult.consolidated_shopping_list.map((item, i) => (
-                        <li key={i} className="flex gap-2 text-sm">
-                          <span className="text-muted-foreground capitalize">{item.ingredient}</span>
-                          <span className="text-foreground">
-                            {item.quantity} {item.unit}
-                          </span>
-                        </li>
-                      ))}
+                      {planResult.consolidated_shopping_list.map((item, i) => {
+                        const qty = Number(item.quantity);
+                        const unit = sanitizeUnit(item.unit);
+                        const displayQty = Number.isFinite(qty) ? (qty % 1 === 0 ? qty : qty.toFixed(2)) : item.quantity;
+                        return (
+                          <li key={i} className="relative flex items-center gap-3 py-2 px-3 rounded-lg bg-secondary/50 border border-border/50">
+                            <span className="text-muted-foreground capitalize flex-1">{item.ingredient}</span>
+                            <span className="text-foreground font-medium tabular-nums shrink-0">
+                              {displayQty}{unit ? ` ${unit}` : ""}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
@@ -838,35 +859,23 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Instructions (expandable per dish) */}
+                {/* Instructions — full text per dish, no scroll */}
                 {planResult.menu_card?.length > 0 && (
                   <div className="rounded-xl border border-border bg-secondary/30 p-5">
                     <h3 className="font-display font-semibold text-foreground mb-4">Instructions</h3>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {planResult.menu_card.map((dish, i) => {
                         const mealType = dish?.meal_type || "entree";
                         const theme = MENU_THEME_STYLES[mealType] || MENU_THEME_STYLES.entree;
-                        const isExpanded = expandedInstructions === i;
                         const instructions = (dish.instructions || "").trim();
                         return (
                           <div
                             key={i}
-                            className="rounded-lg border border-border overflow-hidden"
+                            className="rounded-lg border border-border px-3 py-3"
                             style={{ backgroundColor: theme.accentBg }}
                           >
-                            <button
-                              type="button"
-                              onClick={() => setExpandedInstructions((prev) => (prev === i ? -1 : i))}
-                              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-black/[0.02] transition-colors"
-                            >
-                              <span className="font-display font-medium text-foreground text-sm tracking-wide">{dish.name}</span>
-                              <span className="text-muted-foreground text-xs shrink-0">{isExpanded ? "▲" : "▼"}</span>
-                            </button>
-                            {isExpanded && instructions && (
-                              <div className="px-3 pb-3 pt-0 border-t border-border/50">
-                                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap mt-2">{instructions}</p>
-                              </div>
-                            )}
+                            <div className="font-display font-medium text-foreground text-sm tracking-wide mb-2">{dish.name}</div>
+                            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{instructions || "—"}</p>
                           </div>
                         );
                       })}
@@ -924,6 +933,11 @@ export default function App() {
           </motion.div>
         )}
 
+        <RecipeDetailModal
+          recipe={selectedRecipe}
+          open={!!selectedRecipe}
+          onClose={() => setSelectedRecipe(null)}
+        />
         <MenuCardEditor
           menuCard={materialsData}
           open={materialsEditorOpen}

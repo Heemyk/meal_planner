@@ -57,7 +57,7 @@ def test_recipe_upload(client, monkeypatch):
     )
     monkeypatch.setattr(
         "app.api.recipes.normalize_units",
-        lambda ingredient_text: {
+        lambda ingredient_text, canonical_name="", target_base_unit=None: {
             "base_unit": "count",
             "base_unit_qty": 1.0,
             "normalized_qty": 1.0,
@@ -102,7 +102,7 @@ def test_recipe_upload_sets_allergens(client, monkeypatch, session):
     )
     monkeypatch.setattr(
         "app.api.recipes.normalize_units",
-        lambda _: {"base_unit": "ml", "base_unit_qty": 1.0, "normalized_qty": 100, "normalized_unit": "ml"},
+        lambda _1, canonical_name="", target_base_unit=None: {"base_unit": "ml", "base_unit_qty": 1.0, "normalized_qty": 100, "normalized_unit": "ml"},
     )
     monkeypatch.setattr(
         "app.api.recipes.fetch_skus_for_ingredient",

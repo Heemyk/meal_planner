@@ -8,6 +8,7 @@ from typing import List
 
 import dspy
 
+from app.logging import get_logger
 from app.services.allergens import ALLERGEN_ONTOLOGY, _infer_allergens_keywords
 from app.services.llm.dspy_client import run_with_logging
 from app.services.llm.prompts import ALLERGEN_INFER_PROMPT_VERSION, ALLERGEN_INFER_TEMPLATE
@@ -77,8 +78,14 @@ def infer_allergens_llm(ingredient_names: List[str]) -> List[str]:
             allergen_ontology=ontology_str,
         )
         raw = getattr(prediction, "allergens", None) or ""
-        return _parse_allergen_output(str(raw))
+        parsed = _parse_allergen_output(str(raw))
+        # Safeguard: LLM sometimes returns full ontology. Most recipes have 0–4 allergens.
+        if len(parsed) > 6:
+            get_logger(__name__).warning(
+                "allergen_infer.llm_over_returned count=%s using keywords", len(parsed)
+            )
+            return _infer_allergens_keywords(ingredient_names)
+        return parsed
     except Exception as e:
-        from app.logging import get_logger
         get_logger(__name__).warning("allergen_infer.llm_failed error=%s using keywords", e)
         return _infer_allergens_keywords(ingredient_names)

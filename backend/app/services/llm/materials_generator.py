@@ -57,7 +57,7 @@ def _generate_tone(dish_names: list[str]) -> str:
         pred = run_with_logging(
             prompt_name="description_tone",
             prompt_version=DESCRIPTION_TONE_PROMPT_VERSION,
-            fn=lambda: predictor(prompt=prompt),
+            fn=lambda **_: predictor(prompt=prompt),
         )
         out = getattr(pred, "tone", "") or ""
         return out.strip() or "Warm and inviting, with classic menu phrasing."
@@ -95,7 +95,7 @@ def _generate_dish_description(
         pred = run_with_logging(
             prompt_name="dish_description",
             prompt_version=DISH_DESCRIPTION_PROMPT_VERSION,
-            fn=lambda: predictor(prompt=prompt),
+            fn=lambda **_: predictor(prompt=prompt),
         )
         out = getattr(pred, "description", "") or ""
         return out.strip() or f"A delicious {dish_name}."

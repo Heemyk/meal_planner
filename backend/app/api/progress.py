@@ -96,9 +96,12 @@ def _get_ingredient_ids_unavailable() -> set:
 
 def _match_and_normalize(ingredient_text: str, existing_names: list[str]):
     from app.services.llm.ingredient_matcher import match_ingredient
+    from app.services.llm.ingredient_ontology import get_preferred_base_unit
     from app.services.llm.unit_normalizer import normalize_units
     match = match_ingredient(ingredient_text, existing_names)
-    normalized = normalize_units(ingredient_text)
+    canonical_name = (match.get("canonical_name") or "").strip().lower() or "unknown"
+    target_base = get_preferred_base_unit(canonical_name)
+    normalized = normalize_units(ingredient_text, canonical_name=canonical_name, target_base_unit=target_base)
     return match, normalized
 
 
@@ -224,12 +227,14 @@ def _run_processing(
                     canonical_name = (match.get("canonical_name") or "").strip().lower() or "unknown"
                     ingredient = existing_lookup.get(canonical_name)
                     if not ingredient:
+                        from app.services.llm.ingredient_ontology import get_preferred_base_unit
+                        preferred_unit = get_preferred_base_unit(canonical_name)
                         ingredient = get_or_create_ingredient(
                             session,
                             name=canonical_name,
                             canonical_name=canonical_name,
-                            base_unit=normalized["base_unit"],
-                            base_unit_qty=normalized["base_unit_qty"],
+                            base_unit=preferred_unit,
+                            base_unit_qty=normalized.get("base_unit_qty", 1.0),
                         )
                         existing_lookup[canonical_name] = ingredient
                         existing_names.append(canonical_name)

@@ -11,11 +11,24 @@ from app.services.optimization.ilp_solver import ILPSolverOptions, IngredientOpt
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
 from app.services.allergens import get_all_allergen_codes
-from app.services.llm.sku_size_converter import convert_sku_size
+from app.services.llm.ingredient_ontology import get_preferred_base_unit
+from app.services.llm.sku_size_converter import convert_sku_size, _sanitize_display
 from app.storage.repositories import create_menu_plan
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+_CANONICAL_BASE_UNITS = {"g", "ml", "count", "tbsp", "tsp"}
+
+
+def _sanitize_base_unit(bu: str | None) -> str:
+    """Ensure base_unit is canonical (g, ml, count, tbsp, tsp) for LP/display."""
+    if not bu:
+        return "count"
+    s = str(bu).strip().lower()
+    first = s.split()[0] if s else ""
+    first = first.split("(")[0].split(",")[0].strip()
+    return first if first in _CANONICAL_BASE_UNITS else "count"
 
 
 @router.get("/allergens")
@@ -98,7 +111,7 @@ def ingredients_with_skus():
         for s in valid_skus:
             skus_by_ingredient.setdefault(s.ingredient_id, []).append(s)
         def _sku_row(s) -> dict:
-            size = getattr(s, "size_display", None) or s.size
+            size = _sanitize_display(getattr(s, "size_display", None) or s.size) or s.size
             qty = getattr(s, "quantity_in_base_unit", None)
             price = s.price
             ppu = None
@@ -119,7 +132,7 @@ def ingredients_with_skus():
             {
                 "id": i.id,
                 "name": i.canonical_name,
-                "base_unit": i.base_unit,
+                "base_unit": get_preferred_base_unit(i.canonical_name) or "units",
                 "skus": [_sku_row(sk) for sk in skus_by_ingredient.get(i.id, [])],
                 "sku_unavailable": getattr(i, "sku_unavailable", False),
             }
@@ -250,10 +263,10 @@ def plan(request: PlanRequest) -> PlanResponse:
                     if slug not in store_slugs:
                         continue
                 ing = ingredients_by_id.get(sku.ingredient_id)
-                base_unit = ing.base_unit if ing else "count"
+                base_unit = get_preferred_base_unit(ing.canonical_name if ing else "") or "count"
                 qty = sku.quantity_in_base_unit
                 if qty is None or qty <= 0:
-                    qty, _ = convert_sku_size(sku.size, base_unit)
+                    qty, _ = convert_sku_size(sku.size, base_unit, product_name=sku.name or "")
                 sku_options.append(
                     IngredientOption(
                         ingredient_id=sku.ingredient_id,
@@ -340,7 +353,7 @@ def plan(request: PlanRequest) -> PlanResponse:
                         "brand": s.brand,
                         "retailer": s.retailer_slug,
                         "price": s.price,
-                        "size": getattr(s, "size_display", None) or s.size,
+                        "size": _sanitize_display(getattr(s, "size_display", None) or s.size) or s.size,
                         "quantity": int(qty),
                     }
 
@@ -393,7 +406,7 @@ def plan(request: PlanRequest) -> PlanResponse:
                 consolidated_shopping_list.append({
                     "ingredient": ing.canonical_name,
                     "quantity": round(total_qty, 2),
-                    "unit": ing.base_unit or "units",
+                    "unit": get_preferred_base_unit(ing.canonical_name) or "units",
                 })
 
         status = result.get("status", "Unknown")

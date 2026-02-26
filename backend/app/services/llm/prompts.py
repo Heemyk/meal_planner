@@ -1,8 +1,20 @@
-INGREDIENT_MATCH_PROMPT_VERSION = "v3"
-UNIT_NORMALIZE_PROMPT_VERSION = "v4"
+INGREDIENT_MATCH_PROMPT_VERSION = "v4"
+UNIT_NORMALIZE_PROMPT_VERSION = "v7"
 SKU_FILTER_PROMPT_VERSION = "v3"
 ALLERGEN_INFER_PROMPT_VERSION = "v2"
-SKU_SIZE_CONVERT_PROMPT_VERSION = "v4"
+SKU_SIZE_CONVERT_PROMPT_VERSION = "v6"
+SKU_SIZE_EXTRACT_PROMPT_VERSION = "v1"
+
+SKU_SIZE_EXTRACT_TEMPLATE = """Extract and convert in one step.
+
+Given size_string, product_name, and base_unit (g, ml, count, tbsp, tsp):
+
+1. Extract the numeric amount and unit from size_string or product_name (e.g. "15 oz" -> 15, fl_oz; "2 lb" -> 2, lb).
+2. Convert to base_unit: lb->g (×453.59), fl oz->ml (×29.57), oz->g (×28.35), L->ml (×1000).
+3. For "each"/vague sizes: use product_name to estimate (cream 15oz=443ml, asparagus each=1 count, garlic 2lb=227 cloves).
+
+Return quantity_in_base_unit (numeric) and size_display (short label like "15 oz" or "2 lb"). No reasoning.
+"""
 
 INGREDIENT_MATCH_TEMPLATE = """You are matching an ingredient line to a canonical ingredient list.
 Return a decision with:
@@ -16,24 +28,39 @@ Rules:
 2) Consolidate variants: tomato, tomatoes, cherry tomatoes, grape tomatoes, roma → canonical_name: tomato (singular base form).
 3) Use new only if truly different (e.g. tomato sauce vs whole tomato).
 4) If similar, choose generalize when a specific type can use the general for shopping.
+5) For citrus: "lemon juice", "lemon zest", "2 lemons" → canonical_name: lemon (buy whole lemons). Same for lime, orange.
 Do not include step-by-step reasoning in the rationale.
 """
 
-UNIT_NORMALIZE_TEMPLATE = """Normalize ingredient quantities to a base unit.
-Return:
-- base_unit: g | ml | count | tsp | tbsp
-- base_unit_qty: numeric base size for 1 unit (e.g., 1.0)
-- normalized_qty: numeric amount for this line in base units
-- normalized_unit: must equal base_unit
+UNIT_NORMALIZE_TEMPLATE = """Solve this as a MATHEMATICAL CONVERSION problem.
 
-Canonical base units (use these for LP compatibility):
-- Weight: always g (flour, sugar, meat, potatoes, butter by weight). Convert lb, oz → g. 1 lb = 453.59 g.
-- Volume: always ml (oil, milk, cream, juice). Convert fl oz, cup, tbsp → ml.
-- Count: whole items (lemons, eggs, cloves, apples, chicken whole).
-- tbsp/tsp: herbs/spices measured by spoon.
+GIVEN:
+- ingredient_text: the raw recipe line (e.g. "2 lemons, sliced", "1 tablespoon lemon juice", "1/2 cup heavy cream")
+- canonical_name: the ingredient (e.g. lemon, heavy cream, garlic)
+- target_base_unit: YOU MUST output quantities in this unit. Convert TO this unit.
 
-Convert to canonical: "4 lb potato" → base_unit=g, normalized_qty=1814.36. "2 cups milk" → base_unit=ml, normalized_qty=473.
-If the line is 'to taste' or unspecified, return 0 for normalized_qty.
+TASK: Convert the quantity in ingredient_text to target_base_unit. base_unit and normalized_unit must equal target_base_unit.
+
+RETURN (EXACT format, no extra text):
+- base_unit: same as target_base_unit
+- base_unit_qty: 1.0
+- normalized_qty: numeric amount in target_base_unit for this recipe line
+- normalized_unit: same as target_base_unit
+
+CONVERSION FACTS:
+- 1 lb = 453.59 g, 1 oz (weight) = 28.35 g
+- 1 cup = 240 ml, 1 fl oz = 29.57 ml, 1 tbsp = 15 ml, 1 tsp = 5 ml
+- Butter: 1 tbsp butter = 14 g (use g as base_unit for butter)
+
+EXAMPLES (convert TO target_base_unit):
+- "1/2 cup heavy cream" + target ml → 120 ml (1 cup=240 ml)
+- "2 lemons" + target count → 2 count
+- "1 tablespoon lemon juice" + target count (lemon) → 0.33 count (1 lemon ≈ 3 tbsp juice)
+- "4 cloves garlic" + target count → 4 count
+- "4 tablespoons butter" + target g → 56 g (1 tbsp butter ≈ 14 g)
+- "2 lbs asparagus" + target count → 2 count (1 bunch ≈ 1 lb)
+- "2 tablespoons rosemary" + target tbsp → 2 tbsp
+If "to taste" or unspecified: normalized_qty=0.
 """
 
 SKU_FILTER_TEMPLATE = """Given a query and candidate SKU list, select ONLY the items that truly match the query.
@@ -114,23 +141,24 @@ For herbs/spices measured by spoon (e.g. 2 tablespoons rosemary): use tbsp or ml
 SKU_SIZE_CONVERT_TEMPLATE = """Solve this as a MATHEMATICAL CONVERSION problem.
 
 GIVEN:
-- size_string: the product pack size (e.g. "5 lb", "32 fl oz", "each")
-- product_name: product name (may contain quantity if size is vague, e.g. "Olive Oil, 2 L")
+- size_string: product pack size (e.g. "5 lb", "32 fl oz", "each")
+- product_name: product name (CRITICAL when size is vague—e.g. "Gourmet Trading Company Asparagus", "Olive Oil 2 L")
 - base_unit: target unit for output (g, ml, count, tbsp, tsp)
 
-CONVERSION FACTS (use these exactly):
-- 1 lb = 453.59 g
-- 1 oz (weight) = 28.35 g
-- 1 fl oz = 29.57 ml
-- 1 cup = 240 ml, 1 L = 1000 ml
-- count: whole items → 1 per item
+CONVERSION FACTS:
+- 1 lb = 453.59 g, 1 oz (weight) = 28.35 g
+- 1 fl oz = 29.57 ml, 1 cup = 240 ml, 1 L = 1000 ml
+- count: 1 per item → quantity_in_base_unit = 1
 
 REASON step-by-step:
-1. Extract the numeric amount and unit from size_string (or product_name if size is vague like "each").
-2. Identify which conversion factor applies.
-3. Compute: quantity_in_base_unit = amount × conversion_factor. Show the multiplication.
-4. Output the final numeric quantity in base_unit. E.g. "5 lb" + base g → 5 × 453.59 = 2267.95.
+1. Extract numeric amount and unit from size_string (or product_name if size is vague like "each").
+2. If size is "each"/"1 each" and base_unit is count: output 1 (one item = one count).
+3. If size is "each" and base_unit is g or ml: use product_name to estimate typical weight/volume per item.
+   E.g. "Asparagus" 1 each → 1 bunch ≈ 400–500 g. "Lemon" 1 each ≈ 60–80 g or ~50 ml juice. "Garlic" 1 head ≈ 20–30 g.
+4. If size has explicit unit (lb, oz, ml, L): apply conversion factor. "5 lb" + base g → 5 × 453.59 = 2267.95.
 
-CRITICAL: quantity_in_base_unit is the TOTAL amount in ONE pack, expressed in base_unit. NOT the raw number (e.g. 2267.95 for "5 lb"→g, never 5).
-size_display: human-friendly label (e.g. "5 lb", "32 fl oz", "1 each").
+CRITICAL: quantity_in_base_unit = TOTAL amount in ONE pack, in base_unit. For "5 lb"→g output 2267.95, never 5.
+
+When base_unit is count and product is garlic: 1 clove ≈ 4g. "2 lbs" garlic → 2×453.59=907g → 907/4≈227 cloves per pack.
+size_display: human-friendly label (e.g. "5 lb", "1 each").
 """
