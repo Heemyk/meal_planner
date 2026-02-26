@@ -32,6 +32,8 @@ def solve_ilp(
     solver_options: Optional[ILPSolverOptions] = None,
     recipe_meal_types: Optional[Dict[int, str]] = None,
     meal_config: Optional[Dict[str, int]] = None,
+    include_every_recipe_ids: Optional[List[int]] = None,
+    required_recipe_ids: Optional[List[int]] = None,
 ) -> dict:
     opts = solver_options or ILPSolverOptions()
     model = pulp.LpProblem("meal_plan", pulp.LpMinimize)
@@ -45,19 +47,40 @@ def solve_ilp(
         for option in options
     }
 
+    servings_per_recipe = {r.recipe_id: r.servings for r in recipes}
+
+    # Total servings (fallback if no meal_config)
     model += pulp.lpSum([recipe_vars[r.recipe_id] * r.servings for r in recipes]) >= target_servings
 
-    # Meal-type constraints: at least N recipes of each specified type must have batches >= 1
+    # Meal-type constraints (per-person): each person gets min_count servings of that type
+    # e.g. appetizer:1, entree:2 -> need target_servings*1 appetizer, target_servings*2 entree
     if recipe_meal_types and meal_config:
         for meal_type, min_count in meal_config.items():
             if min_count and min_count > 0:
                 type_recipe_ids = [rid for rid, mt in recipe_meal_types.items() if mt == meal_type]
                 if type_recipe_ids:
-                    # At least min_count total batches across recipes of this type
+                    min_servings = target_servings * min_count
                     model += (
-                        pulp.lpSum([recipe_vars[rid] for rid in type_recipe_ids if rid in recipe_vars])
-                        >= min_count
+                        pulp.lpSum([
+                            recipe_vars[rid] * servings_per_recipe.get(rid, 1)
+                            for rid in type_recipe_ids if rid in recipe_vars
+                        ])
+                        >= min_servings
                     )
+
+    # Include every recipe: each person gets 1 serving of each recipe in the set
+    if include_every_recipe_ids:
+        for rid in include_every_recipe_ids:
+            if rid in recipe_vars:
+                model += (
+                    recipe_vars[rid] * servings_per_recipe.get(rid, 1) >= target_servings
+                )
+
+    # Required recipes: must have at least 1 batch
+    if required_recipe_ids:
+        for rid in required_recipe_ids:
+            if rid in recipe_vars:
+                model += recipe_vars[rid] >= 1
 
     ingredients = {option.ingredient_id for option in options}
     for ingredient_id in ingredients:

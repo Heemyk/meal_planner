@@ -319,6 +319,8 @@ def plan(request: PlanRequest) -> PlanResponse:
                 solver_opts,
                 recipe_meal_types=recipe_meal_types,
                 meal_config=meal_config,
+                include_every_recipe_ids=request.include_every_recipe_ids,
+                required_recipe_ids=request.required_recipe_ids,
             )
             plan_payload = {
                 "recipes": {str(k): int(v) if v is not None else 0 for k, v in (result["recipes"] or {}).items()},
@@ -370,17 +372,17 @@ def plan(request: PlanRequest) -> PlanResponse:
                 first_line = (recipe.instructions or "").split(".")[0].strip()
                 if first_line:
                     first_line += "."
-                instructions_short = (recipe.instructions or "")[:500]
                 menu_card_list.append({
                     "name": recipe.name,
                     "recipe_id": bid,
                     "meal_type": recipe.meal_type or "entree",
+                    "allergens": recipe.allergens or [],
                     "ingredients": [
                         ri.original_text for ri in recipe_ingredients
                         if ri.recipe_id == bid
                     ],
                     "description": first_line or f"A delicious {recipe.name}.",
-                    "instructions": instructions_short,
+                    "instructions": recipe.instructions or "",
                 })
 
             consolidated_shopping_list: list[dict] = []

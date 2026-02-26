@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   createPlan,
@@ -7,7 +7,6 @@ import {
   getIngredientsWithSkus,
   getRecipes,
   getLocation,
-  getStores,
   generateMaterials,
 } from "./api.js";
 import { logger } from "./logger.js";
@@ -47,13 +46,15 @@ export default function App() {
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mealConfig, setMealConfig] = useState({ appetizer: 0, entree: 1, dessert: 0, side: 0 });
+  const [includeEveryRecipe, setIncludeEveryRecipe] = useState(true);
+  const [requiredRecipeIds, setRequiredRecipeIds] = useState([]);
   const [storeSlugs, setStoreSlugs] = useState([]);
-  const [stores, setStores] = useState([]);
   const [allergens, setAllergens] = useState([]);
   const [excludeAllergens, setExcludeAllergens] = useState([]);
   const [materialsEditorOpen, setMaterialsEditorOpen] = useState(false);
   const [materialsData, setMaterialsData] = useState(null);
   const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [expandedInstructions, setExpandedInstructions] = useState(-1);
   const [search, setSearch] = useState("");
   const [activeMealFilter, setActiveMealFilter] = useState("all");
 
@@ -113,19 +114,19 @@ export default function App() {
     fetchLocation();
   }, [fetchLocation]);
 
-  const fetchStores = useCallback(async () => {
-    const pc = manualPostalCode.trim() || location.postal_code;
-    try {
-      const data = await getStores(pc);
-      setStores(data.stores || []);
-    } catch {
-      setStores([]);
-    }
-  }, [manualPostalCode, location.postal_code]);
-
-  useEffect(() => {
-    fetchStores();
-  }, [fetchStores]);
+  // Stores from current SKUs (ingredients data) — used for store filter dropdown
+  const storesFromSkus = useMemo(() => {
+    const slugToName = new Map();
+    ingredients.forEach((ing) => {
+      ing.skus?.forEach((sku) => {
+        const slug = sku.retailer_slug?.trim?.();
+        if (slug && !slugToName.has(slug)) {
+          slugToName.set(slug, slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
+        }
+      });
+    });
+    return [...slugToName.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([slug, name]) => ({ slug, name }));
+  }, [ingredients]);
 
   useEffect(() => {
     fetchAllergens();
@@ -135,6 +136,12 @@ export default function App() {
     fetchIngredients();
     fetchRecipes();
   }, [fetchIngredients, fetchRecipes]);
+
+  // Include-every-recipe: default on for single file, off when multiple files
+  useEffect(() => {
+    if (fileProgress.length === 1) setIncludeEveryRecipe(true);
+    else if (fileProgress.length > 1) setIncludeEveryRecipe(false);
+  }, [fileProgress.length]);
 
 
   const handleUpload = async () => {
@@ -178,15 +185,24 @@ export default function App() {
     setError(null);
     try {
       uiLogger.info("plan.click", { targetServings });
+      const singleFile = fileProgress.length === 1;
+      const menuRecipeIds = singleFile && includeEveryRecipe
+        ? recipes
+          .filter((r) => r.source_file === fileProgress[0]?.name && !r.has_unavailable_ingredients)
+          .map((r) => r.id)
+        : [];
       const result = await createPlan(Number(targetServings), manualPostalCode.trim() || location.postal_code, {
         ...lpOptions,
         mealConfig: Object.fromEntries(
           Object.entries(mealConfig).filter(([, v]) => v != null && v > 0)
         ),
+        includeEveryRecipeIds: menuRecipeIds.length ? menuRecipeIds : undefined,
+        requiredRecipeIds: requiredRecipeIds.length ? requiredRecipeIds : undefined,
         storeSlugs: storeSlugs.length ? storeSlugs : undefined,
         excludeAllergens: excludeAllergens.length ? excludeAllergens : undefined,
       });
       setPlanResult(result);
+      setExpandedInstructions(-1);
     } catch (err) {
       uiLogger.error("plan.failed", err);
       setError(err.message);
@@ -554,8 +570,19 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                  {fileProgress.length === 1 && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeEveryRecipe}
+                        onChange={(e) => setIncludeEveryRecipe(e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      <span className="text-sm text-foreground">Include every recipe (each person gets 1 serving of each)</span>
+                    </label>
+                  )}
                   <div className="flex flex-wrap gap-4 items-center">
-                    <span className="text-sm text-muted-foreground">Meal types (min each):</span>
+                    <span className="text-sm text-muted-foreground">Meal types (per person):</span>
                 {["appetizer", "entree", "dessert", "side"].map((type) => {
                   const count = recipes.filter(
                     (r) =>
@@ -590,6 +617,50 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-col gap-2">
+                    <span className="text-sm text-muted-foreground">Must include recipes:</span>
+                    <div className="flex gap-2 flex-wrap items-center">
+                      {requiredRecipeIds.map((rid) => {
+                        const recipe = recipes.find((r) => r.id === rid);
+                        return (
+                          <span
+                            key={rid}
+                            className="inline-flex items-center gap-1 rounded-full bg-secondary px-3 py-1 text-sm text-secondary-foreground"
+                          >
+                            {recipe?.name ?? `Recipe ${rid}`}
+                            <button
+                              type="button"
+                              onClick={() => setRequiredRecipeIds((arr) => arr.filter((x) => x !== rid))}
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const id = parseInt(e.target.value, 10);
+                          if (id && !requiredRecipeIds.includes(id)) {
+                            setRequiredRecipeIds((arr) => [...arr, id]);
+                          }
+                          e.target.value = "";
+                        }}
+                        className="rounded-lg border border-input bg-secondary px-3 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring min-w-[180px]"
+                      >
+                        <option value="">Add recipe…</option>
+                        {recipes
+                          .filter((r) => !r.has_unavailable_ingredients && !requiredRecipeIds.includes(r.id))
+                          .map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
                     <span className="text-sm text-muted-foreground">Stores only:</span>
                 <div className="flex gap-2 flex-wrap items-center">
                   {storeSlugs.map((s) => (
@@ -597,7 +668,7 @@ export default function App() {
                       key={s}
                       className="inline-flex items-center gap-1 rounded-full bg-secondary px-3 py-1 text-sm text-secondary-foreground"
                     >
-                      {stores.find((st) => st.slug === s)?.name || s.replace(/-/g, " ")}
+                      {storesFromSkus.find((st) => st.slug === s)?.name || s.replace(/-/g, " ")}
                       <button
                         type="button"
                         onClick={() => setStoreSlugs((arr) => arr.filter((x) => x !== s))}
@@ -619,7 +690,7 @@ export default function App() {
                     className="rounded-lg border border-input bg-secondary px-3 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring min-w-[140px]"
                   >
                     <option value="">Add store…</option>
-                    {stores
+                    {storesFromSkus
                       .filter((st) => st.slug && !storeSlugs.includes(st.slug))
                       .map((st) => (
                         <option key={st.slug} value={st.slug}>
@@ -767,30 +838,35 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Menu card */}
+                {/* Instructions (expandable per dish) */}
                 {planResult.menu_card?.length > 0 && (
                   <div className="rounded-xl border border-border bg-secondary/30 p-5">
-                    <h3 className="font-display text-sm font-medium tracking-[0.12em] uppercase text-muted-foreground mb-4">Menu</h3>
-                    <div className="space-y-1.5">
+                    <h3 className="font-display font-semibold text-foreground mb-4">Instructions</h3>
+                    <div className="space-y-2">
                       {planResult.menu_card.map((dish, i) => {
                         const mealType = dish?.meal_type || "entree";
                         const theme = MENU_THEME_STYLES[mealType] || MENU_THEME_STYLES.entree;
+                        const isExpanded = expandedInstructions === i;
+                        const instructions = (dish.instructions || "").trim();
                         return (
                           <div
                             key={i}
-                            className="rounded px-2.5 py-1.5"
+                            className="rounded-lg border border-border overflow-hidden"
                             style={{ backgroundColor: theme.accentBg }}
                           >
-                            <div className="flex gap-2">
-                              <div
-                                className="w-0.5 shrink-0 self-stretch rounded-full"
-                                style={{ backgroundColor: theme.borderColor }}
-                              />
-                              <div className="min-w-0 flex-1">
-                                <h4 className="font-display font-medium text-foreground text-sm tracking-wide">{dish.name}</h4>
-                                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug line-clamp-2">{dish.description}</p>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedInstructions((prev) => (prev === i ? -1 : i))}
+                              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-black/[0.02] transition-colors"
+                            >
+                              <span className="font-display font-medium text-foreground text-sm tracking-wide">{dish.name}</span>
+                              <span className="text-muted-foreground text-xs shrink-0">{isExpanded ? "▲" : "▼"}</span>
+                            </button>
+                            {isExpanded && instructions && (
+                              <div className="px-3 pb-3 pt-0 border-t border-border/50">
+                                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap mt-2">{instructions}</p>
                               </div>
-                            </div>
+                            )}
                           </div>
                         );
                       })}

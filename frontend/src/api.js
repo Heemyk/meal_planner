@@ -29,9 +29,37 @@ export async function uploadRecipes(files, postalCode) {
  * onProgress: (event, data) => void
  * Events: upload_started, ingredient_added, upload_complete, sku_progress, stream_complete
  * Returns a promise that resolves when stream_complete is received.
+ *
+ * If the SSE connection drops (e.g. during LLM backoff/retry), falls back to polling
+ * /progress until complete so the job is never left hanging.
  */
 export function subscribeUploadStream(jobId, onProgress) {
   return new Promise((resolve) => {
+    let resolved = false;
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      resolve();
+    };
+
+    const pollUntilComplete = async () => {
+      const pollInterval = 2000;
+      const maxPolls = 180; // ~6 min
+      for (let i = 0; i < maxPolls; i++) {
+        const progress = await getProgress(jobId);
+        if (progress?.complete) {
+          onProgress?.("stream_complete", { files: progress.files || [] });
+          finish();
+          return;
+        }
+        if (progress?.files?.length) {
+          onProgress?.("sku_progress", { files: progress.files });
+        }
+        await new Promise((r) => setTimeout(r, pollInterval));
+      }
+      finish();
+    };
+
     const url = `${API_URL}/recipes/upload/stream/${encodeURIComponent(jobId)}`;
     const es = new EventSource(url);
     const events = ["upload_started", "ingredient_added", "upload_complete", "sku_progress", "stream_complete"];
@@ -41,12 +69,12 @@ export function subscribeUploadStream(jobId, onProgress) {
         onProgress?.(e.type, data);
         if (e.type === "stream_complete") {
           es.close();
-          resolve();
+          finish();
         }
       } catch (err) {
         if (e.type === "stream_complete") {
           es.close();
-          resolve();
+          finish();
         }
       }
     };
@@ -54,9 +82,9 @@ export function subscribeUploadStream(jobId, onProgress) {
       es.addEventListener(ev, handle);
     }
     es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) {
-        resolve();
-      }
+      es.close();
+      // Connection dropped (e.g. timeout during backoff) — poll until complete instead of failing
+      pollUntilComplete();
     };
   });
 }
@@ -80,6 +108,8 @@ export async function createPlan(targetServings, postalCode, options = {}) {
   if (options.batchPenalty != null) body.batch_penalty = options.batchPenalty;
   if (options.mealConfig && Object.keys(options.mealConfig).length)
     body.meal_config = options.mealConfig;
+  if (options.includeEveryRecipeIds?.length) body.include_every_recipe_ids = options.includeEveryRecipeIds;
+  if (options.requiredRecipeIds?.length) body.required_recipe_ids = options.requiredRecipeIds;
   if (options.storeSlugs?.length) body.store_slugs = options.storeSlugs;
   if (options.excludeAllergens?.length) body.exclude_allergens = options.excludeAllergens;
   const response = await fetch(`${API_URL}/plan`, {

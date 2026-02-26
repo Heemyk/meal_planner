@@ -92,6 +92,11 @@ function PrintableCardCanvas({ cards, onDescriptionChange }) {
                     placeholder="Brief description..."
                     style={{ fontFamily: "var(--font-body)" }}
                   />
+                  {dish?.allergens?.length > 0 && (
+                    <p className="mt-1 text-[9px] text-amber-700/90" style={{ fontFamily: "var(--font-body)" }}>
+                      Contains: {dish.allergens.map((a) => a.replace(/_/g, " ")).join(", ")}
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -145,6 +150,11 @@ function CardForCapture({ cards }) {
                   <p className="mt-0.5 text-[10px] leading-snug text-black/60 line-clamp-2">
                     {desc}
                   </p>
+                  {dish?.allergens?.length > 0 && (
+                    <p className="mt-0.5 text-[9px] text-amber-700/90">
+                      Contains: {dish.allergens.map((a) => a.replace(/_/g, " ")).join(", ")}
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -177,6 +187,8 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
     );
   };
 
+  const [exporting, setExporting] = useState(false);
+
   const handleExport = async () => {
     const container = captureRef.current?.firstElementChild ?? captureRef.current;
     if (!container) {
@@ -184,10 +196,12 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
       return;
     }
 
+    setExporting(true);
     try {
-      // Clone into viewport so html2canvas can render it (off-screen elements often fail)
+      // Clone into viewport so html2canvas can render it (opacity 1, off-screen for reliable capture)
       const clone = container.cloneNode(true);
-      clone.style.cssText = "position:fixed;left:0;top:0;z-index:9999;opacity:0.001;pointer-events:none;";
+      clone.style.cssText =
+        "position:fixed;left:-9999px;top:0;z-index:9999;opacity:1;pointer-events:none;width:420px;";
       document.body.appendChild(clone);
       let canvas;
       try {
@@ -221,7 +235,8 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
         creator: "Tandem Recipe Planner",
       });
 
-      const pdfBlob = doc.output("blob");
+      // jsPDF 4 returns a Promise for output("blob") — must await
+      const pdfBlob = await doc.output("blob");
 
       const metadata = {
         resolution_dpi: printMeta.resolution,
@@ -229,6 +244,12 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
         paper_stock: printMeta.paperStock,
         paper_size: printMeta.size,
         finishes: printMeta.finishes,
+        menu_card: (cards.length ? cards : menuCard || []).map((d) => ({
+          name: d.name,
+          meal_type: d.meal_type,
+          description: d.description ?? d.generated_description ?? "",
+          allergens: d.allergens ?? [],
+        })),
       };
 
       const zip = new JSZip();
@@ -246,9 +267,11 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
       setTimeout(() => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-      }, 150);
+      }, 500);
     } catch (err) {
       console.error("Export failed:", err);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -370,9 +393,10 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
             <div className="flex gap-3">
               <button
                 onClick={handleExport}
-                className="flex-1 rounded-xl bg-primary px-4 py-3 font-medium text-primary-foreground transition-opacity hover:opacity-90 glow-primary"
+                disabled={exporting}
+                className="flex-1 rounded-xl bg-primary px-4 py-3 font-medium text-primary-foreground transition-opacity hover:opacity-90 glow-primary disabled:opacity-60 disabled:cursor-wait"
               >
-                Export (.zip with PDF + metadata)
+                {exporting ? "Exporting…" : "Download All (.zip with PDF + metadata)"}
               </button>
               <button
                 onClick={() => onClose?.()}

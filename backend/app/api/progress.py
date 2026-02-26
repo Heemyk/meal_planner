@@ -139,6 +139,7 @@ def _run_processing(
         import time
         last_job_with_skus = -1
         last_job_unavailable = -1
+        last_heartbeat = 0
         elapsed = 0
         while elapsed < SKU_POLL_TIMEOUT:
             time.sleep(SKU_POLL_INTERVAL)
@@ -162,6 +163,10 @@ def _run_processing(
             if job_with_skus != last_job_with_skus or job_unavailable != last_job_unavailable:
                 last_job_with_skus = job_with_skus
                 last_job_unavailable = job_unavailable
+                _put("sku_progress", {"job_ingredients_with_skus": job_with_skus, "job_ingredients_unavailable": job_unavailable, "job_sku_total": job_sku_total, "files": snap})
+            # Heartbeat every 15s to keep SSE connection alive during backoff/retries
+            if elapsed - last_heartbeat >= 15:
+                last_heartbeat = elapsed
                 _put("sku_progress", {"job_ingredients_with_skus": job_with_skus, "job_ingredients_unavailable": job_unavailable, "job_sku_total": job_sku_total, "files": snap})
             done = parsing_done.is_set() and (job_sku_total == 0 or job_with_skus + job_unavailable >= job_sku_total)
             if done:
