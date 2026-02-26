@@ -241,6 +241,9 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
           URL.revokeObjectURL(url);
         }, 500);
         setExporting(false);
+      }).catch((err) => {
+        console.error("Export zip failed:", err);
+        setExporting(false);
       });
     } catch (err) {
       console.error("Export failed:", err);

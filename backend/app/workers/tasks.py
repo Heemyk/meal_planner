@@ -61,8 +61,7 @@ def fetch_skus_for_ingredient(self, ingredient_id: int, ingredient_name: str, po
                         ingredient_id,
                     )
                     return {"status": "skipped", "ingredient_id": ingredient_id, "reason": "ingredient_not_found"}
-                from app.services.llm.ingredient_ontology import get_preferred_base_unit
-                base_unit = get_preferred_base_unit(ingredient.canonical_name or "") or "count"
+                base_unit = (ingredient.base_unit or "").strip().lower() or "count"
                 count = len(filtered)
                 if count == 0:
                     set_ingredient_sku_unavailable(session, ingredient_id, unavailable=True)

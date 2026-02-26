@@ -1,4 +1,3 @@
-import re
 from typing import List
 
 import dspy
@@ -117,8 +116,15 @@ def match_ingredient(ingredient_text: str, existing_ingredients: List[str]) -> d
         if not rationale and fallback.get("rationale"):
             rationale = fallback["rationale"].strip()
     if not canonical_name:
-        canonical_name = re.sub(r"\d+[\s\/]*(tbsp|tsp|cup|oz|g|ml|clove|lb)[\s\.]*", "", ingredient_text)
-        canonical_name = re.sub(r"\s+", " ", canonical_name).strip() or "unknown"
+        parts = (ingredient_text or "").strip().split()
+        unit_words = {"tbsp", "tsp", "cup", "oz", "g", "ml", "clove", "cloves", "lb", "lbs"}
+        for p in reversed(parts):
+            w = p.lower().rstrip(",.")
+            if w not in unit_words and not all(c.isdigit() or c in "./" for c in w):
+                canonical_name = w
+                break
+        if not canonical_name:
+            canonical_name = parts[-1].lower() if parts else "unknown"
     return {
         "decision": decision[:20] if decision else "new",
         "canonical_name": canonical_name.lower(),

@@ -36,8 +36,22 @@ def configure_dspy() -> None:
     logger.info("llm.configure provider=%s model=%s", settings.llm_provider, settings.llm_model)
 
 
-def run_with_logging(prompt_name: str, prompt_version: str, fn: Any, **kwargs: Any) -> Any:
-    return _run_llm_call(prompt_name, prompt_version, fn, model=settings.llm_model, **kwargs)
+def run_with_logging(
+    prompt_name: str,
+    prompt_version: str,
+    fn: Any,
+    *,
+    model: str | None = None,
+    **kwargs: Any,
+) -> Any:
+    return _run_llm_call(
+        prompt_name,
+        prompt_version,
+        fn,
+        model=model or settings.llm_model,
+        use_custom_model=model is not None,
+        **kwargs,
+    )
 
 
 def run_with_reasoning_model(prompt_name: str, prompt_version: str, fn: Any, **kwargs: Any) -> Any:
@@ -47,7 +61,14 @@ def run_with_reasoning_model(prompt_name: str, prompt_version: str, fn: Any, **k
 
 
 def _run_llm_call(
-    prompt_name: str, prompt_version: str, fn: Any, *, model: str, use_reasoning_lm: bool = False, **kwargs: Any
+    prompt_name: str,
+    prompt_version: str,
+    fn: Any,
+    *,
+    model: str,
+    use_reasoning_lm: bool = False,
+    use_custom_model: bool = False,
+    **kwargs: Any,
 ) -> Any:
     start = time.time()
     logger.info("[TIMING] llm.call.start name=%s version=%s model=%s", prompt_name, prompt_version, model)
@@ -55,8 +76,12 @@ def _run_llm_call(
     if use_reasoning_lm:
         prev_lm = dspy.settings.lm
         dspy.settings.configure(lm=get_reasoning_lm(), trace=getattr(dspy.settings, "trace", []))
+    elif use_custom_model:
+        prev_lm = dspy.settings.lm
+        dspy.settings.configure(lm=_make_openai_lm(model), trace=getattr(dspy.settings, "trace", []))
+    fn_kwargs = {k: v for k, v in kwargs.items() if k != "model"}
     try:
-        result = fn(**kwargs)
+        result = fn(**fn_kwargs)
     finally:
         if prev_lm is not None:
             dspy.settings.configure(lm=prev_lm, trace=getattr(dspy.settings, "trace", []))

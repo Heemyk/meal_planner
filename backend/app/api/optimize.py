@@ -1,4 +1,3 @@
-import re
 from datetime import datetime
 
 from fastapi import APIRouter, Body
@@ -11,8 +10,7 @@ from app.services.optimization.ilp_solver import ILPSolverOptions, IngredientOpt
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
 from app.services.allergens import get_all_allergen_codes
-from app.services.llm.ingredient_ontology import get_preferred_base_unit
-from app.services.llm.sku_size_converter import convert_sku_size, _sanitize_display
+from app.services.llm.sku_size_converter import convert_sku_size
 from app.storage.repositories import create_menu_plan
 
 router = APIRouter()
@@ -111,7 +109,7 @@ def ingredients_with_skus():
         for s in valid_skus:
             skus_by_ingredient.setdefault(s.ingredient_id, []).append(s)
         def _sku_row(s) -> dict:
-            size = _sanitize_display(getattr(s, "size_display", None) or s.size) or s.size
+            size = getattr(s, "size_display", None) or s.size or ""
             qty = getattr(s, "quantity_in_base_unit", None)
             price = s.price
             ppu = None
@@ -132,7 +130,7 @@ def ingredients_with_skus():
             {
                 "id": i.id,
                 "name": i.canonical_name,
-                "base_unit": get_preferred_base_unit(i.canonical_name) or "units",
+                "base_unit": _sanitize_base_unit(i.base_unit) or "units",
                 "skus": [_sku_row(sk) for sk in skus_by_ingredient.get(i.id, [])],
                 "sku_unavailable": getattr(i, "sku_unavailable", False),
             }
@@ -263,7 +261,7 @@ def plan(request: PlanRequest) -> PlanResponse:
                     if slug not in store_slugs:
                         continue
                 ing = ingredients_by_id.get(sku.ingredient_id)
-                base_unit = get_preferred_base_unit(ing.canonical_name if ing else "") or "count"
+                base_unit = _sanitize_base_unit(ing.base_unit if ing else None) or "count"
                 qty = sku.quantity_in_base_unit
                 if qty is None or qty <= 0:
                     qty, _ = convert_sku_size(sku.size, base_unit, product_name=sku.name or "")
@@ -353,7 +351,7 @@ def plan(request: PlanRequest) -> PlanResponse:
                         "brand": s.brand,
                         "retailer": s.retailer_slug,
                         "price": s.price,
-                        "size": _sanitize_display(getattr(s, "size_display", None) or s.size) or s.size,
+                        "size": getattr(s, "size_display", None) or s.size or "",
                         "quantity": int(qty),
                     }
 
@@ -406,7 +404,7 @@ def plan(request: PlanRequest) -> PlanResponse:
                 consolidated_shopping_list.append({
                     "ingredient": ing.canonical_name,
                     "quantity": round(total_qty, 2),
-                    "unit": get_preferred_base_unit(ing.canonical_name) or "units",
+                    "unit": _sanitize_base_unit(ing.base_unit) or "units",
                 })
 
         status = result.get("status", "Unknown")
@@ -432,7 +430,17 @@ def plan(request: PlanRequest) -> PlanResponse:
 def _parse_size(size: str | None) -> float:
     if not size:
         return 1.0
-    match = re.search(r"([\d\.]+)", size)
-    if not match:
-        return 1.0
-    return float(match.group(1))
+    i = 0
+    while i < len(size):
+        if size[i].isdigit() or (size[i] == "." and i + 1 < len(size) and size[i + 1].isdigit()):
+            j = i
+            while j < len(size) and (size[j].isdigit() or size[j] == "."):
+                j += 1
+            try:
+                return float(size[i:j])
+            except ValueError:
+                pass
+            i = j
+        else:
+            i += 1
+    return 1.0
