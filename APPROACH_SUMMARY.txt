@@ -46,4 +46,4 @@ Frontend: Drag-drop, progress/file, filters (meal, stores, allergens), plan + co
 7. FUTURE WORK
 ================================================================================
 
-Session/token issuer plane; use-up-existing (SQL join pantry, ILP constraint); VM deploy (more workers); multi-user graph DB (Neo4j), ingredient index, recipe recs; DSPy Compile/MIPRO; CI/CD + regression tests.
+Session/token issuer plane; use-up-existing (SQL join pantry, ILP constraint); VM deploy (more workers); multi-user graph DB (Neo4j), ingredient index, recipe recs; DSPy Compile/MIPRO; CI/CD + regression tests; direct buy executions into Instacart (requires auth).
