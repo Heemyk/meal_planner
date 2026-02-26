@@ -22,14 +22,6 @@ def _make_openai_lm(model: str, max_tokens: int = 1024) -> dspy.LM:
     )
 
 
-def get_reasoning_lm() -> dspy.LM:
-    """Smarter model for math/reasoning tasks (SKU conversion, etc.)."""
-    return _make_openai_lm(
-        model=getattr(settings, "llm_model_reasoning", "gpt-4o"),
-        max_tokens=2048,  # CoT output can be longer
-    )
-
-
 def configure_dspy() -> None:
     lm = _make_openai_lm(settings.llm_model)
     dspy.settings.configure(lm=lm, trace=[])
@@ -54,29 +46,19 @@ def run_with_logging(
     )
 
 
-def run_with_reasoning_model(prompt_name: str, prompt_version: str, fn: Any, **kwargs: Any) -> Any:
-    """Run fn using the reasoning model (gpt-4o etc.) for math/reasoning tasks."""
-    model = getattr(settings, "llm_model_reasoning", "gpt-4o")
-    return _run_llm_call(prompt_name, prompt_version, fn, model=model, use_reasoning_lm=True, **kwargs)
-
-
 def _run_llm_call(
     prompt_name: str,
     prompt_version: str,
     fn: Any,
     *,
     model: str,
-    use_reasoning_lm: bool = False,
     use_custom_model: bool = False,
     **kwargs: Any,
 ) -> Any:
     start = time.time()
     logger.info("[TIMING] llm.call.start name=%s version=%s model=%s", prompt_name, prompt_version, model)
     prev_lm = None
-    if use_reasoning_lm:
-        prev_lm = dspy.settings.lm
-        dspy.settings.configure(lm=get_reasoning_lm(), trace=getattr(dspy.settings, "trace", []))
-    elif use_custom_model:
+    if use_custom_model:
         prev_lm = dspy.settings.lm
         dspy.settings.configure(lm=_make_openai_lm(model), trace=getattr(dspy.settings, "trace", []))
     fn_kwargs = {k: v for k, v in kwargs.items() if k != "model"}

@@ -1,8 +1,9 @@
 """
 Normalize ingredient quantities to a canonical base unit.
-Two LLM passes: (1) reason about conversions, (2) produce normalized quantities.
-LLM selects base_unit per explicit rules (liquids→ml, butter→g, countable→count, etc.).
+Single LLM pass: convert directly to base_unit, normalized_qty, normalized_unit.
 """
+
+import re
 
 import dspy
 
@@ -10,26 +11,66 @@ from app.services.llm.dspy_client import run_with_logging
 from app.services.llm.prompts import (
     UNIT_CONVERSION_ONTOLOGY,
     UNIT_NORMALIZE_PROMPT_VERSION,
-    UNIT_NORMALIZE_PRODUCE_TEMPLATE,
-    UNIT_NORMALIZE_REASON_TEMPLATE,
+    UNIT_NORMALIZE_TEMPLATE,
 )
 
+ALLOWED_BASE_UNITS = ("g", "ml", "count", "tbsp", "tsp")
 
-class ReasonSignature(dspy.Signature):
-    """Reason about how to convert ingredient quantity to canonical base unit."""
+
+def _extract_float(raw: object, default: float) -> float:
+    """Extract float from LLM output; handles prompt-dump leakage."""
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        pass
+    s = str(raw).strip()
+    for prefix in ("normalized qty:", "normalized_qty:", "base unit qty:", "base_unit_qty:", "quantity:"):
+        if prefix in s.lower():
+            idx = s.lower().find(prefix)
+            rest = s[idx + len(prefix) :].strip()
+            for word in rest.split():
+                word = word.rstrip(".,")
+                try:
+                    return float(word)
+                except ValueError:
+                    continue
+    nums = re.findall(r"\d+\.?\d*", s)
+    if nums:
+        try:
+            return float(nums[-1])
+        except ValueError:
+            pass
+    return default
+
+
+def _extract_base_unit(raw: str) -> str | None:
+    """Extract base unit from LLM output; handles prompt-dump leakage."""
+    if not raw:
+        return None
+    s = raw.strip().lower()
+    if s in ALLOWED_BASE_UNITS:
+        return s
+    for prefix in ("base unit:", "base_unit:", "normalized unit:", "normalized_unit:"):
+        if prefix in s:
+            idx = s.find(prefix)
+            rest = s[idx + len(prefix) :].strip()
+            for word in rest.split()[:3]:
+                w = word.rstrip(".,\n")
+                if w in ALLOWED_BASE_UNITS:
+                    return w
+    for u in ALLOWED_BASE_UNITS:
+        if re.search(rf"\b{u}\b", s):
+            return u
+    return None
+
+
+class NormalizeSignature(dspy.Signature):
+    """Convert recipe ingredient quantity to canonical base unit."""
 
     ingredient_text: str = dspy.InputField()
     canonical_name: str = dspy.InputField()
-    prompt: str = dspy.InputField()
-    reasoning: str = dspy.OutputField(desc="step-by-step conversion reasoning")
-
-
-class ProduceSignature(dspy.Signature):
-    """Produce normalized quantities from reasoning."""
-
-    ingredient_text: str = dspy.InputField()
-    canonical_name: str = dspy.InputField()
-    reasoning: str = dspy.InputField()
     prompt: str = dspy.InputField()
     base_unit: str = dspy.OutputField()
     base_unit_qty: float = dspy.OutputField()
@@ -42,61 +83,31 @@ def normalize_units(
     canonical_name: str = "",
     target_base_unit: str | None = None,  # optional override; if None, LLM decides
 ) -> dict:
-    """Two-pass LLM: reason first, then produce. LLM selects base_unit per explicit rules."""
-    # Pass 1: reason
-    reason_prompt = UNIT_NORMALIZE_REASON_TEMPLATE.format(
+    """Single-pass LLM: convert ingredient to base_unit, normalized_qty, normalized_unit."""
+    prompt = UNIT_NORMALIZE_TEMPLATE.format(
         conversion_ontology=UNIT_CONVERSION_ONTOLOGY,
         ingredient_text=ingredient_text,
         canonical_name=canonical_name or "unknown",
     )
-    reason_predictor = dspy.Predict(ReasonSignature)
-    reason_pred = run_with_logging(
-        prompt_name="unit_normalize_reason",
+    predictor = dspy.Predict(NormalizeSignature)
+    pred = run_with_logging(
+        prompt_name="unit_normalize",
         prompt_version=UNIT_NORMALIZE_PROMPT_VERSION,
-        fn=reason_predictor,
+        fn=predictor,
         model="gpt-4o-mini",
         ingredient_text=ingredient_text,
         canonical_name=canonical_name or "unknown",
-        prompt=reason_prompt,
-    )
-    reasoning = str(getattr(reason_pred, "reasoning", "") or "").strip()
-
-    # Pass 2: produce
-    produce_prompt = UNIT_NORMALIZE_PRODUCE_TEMPLATE.format(
-        conversion_ontology=UNIT_CONVERSION_ONTOLOGY,
-        ingredient_text=ingredient_text,
-        canonical_name=canonical_name or "unknown",
-        reasoning=reasoning,
-    )
-    produce_predictor = dspy.Predict(ProduceSignature)
-    produce_pred = run_with_logging(
-        prompt_name="unit_normalize_produce",
-        prompt_version=UNIT_NORMALIZE_PROMPT_VERSION,
-        fn=produce_predictor,
-        model="gpt-4o-mini",
-        ingredient_text=ingredient_text,
-        canonical_name=canonical_name or "unknown",
-        reasoning=reasoning,
-        prompt=produce_prompt,
+        prompt=prompt,
     )
 
-    base = str(getattr(produce_pred, "base_unit", "") or target_base_unit or "count").strip().lower().split()[0]
-    if base not in ("g", "ml", "count", "tbsp", "tsp"):
-        base = target_base_unit if target_base_unit else "count"
+    raw_base = str(getattr(pred, "base_unit", "") or target_base_unit or "").strip()
+    base = _extract_base_unit(raw_base) or target_base_unit or "count"
 
-    try:
-        base_qty = float(getattr(produce_pred, "base_unit_qty", 1.0) or 1.0)
-    except (TypeError, ValueError):
-        base_qty = 1.0
+    base_qty = _extract_float(getattr(pred, "base_unit_qty", 1.0), 1.0)
+    norm_qty = _extract_float(getattr(pred, "normalized_qty", 0), 0.0)
 
-    try:
-        norm_qty = float(getattr(produce_pred, "normalized_qty", 0) or 0)
-    except (TypeError, ValueError):
-        norm_qty = 0.0
-
-    norm_unit = str(getattr(produce_pred, "normalized_unit", "") or base).strip().lower().split()[0]
-    if norm_unit not in ("g", "ml", "count", "tbsp", "tsp"):
-        norm_unit = base
+    raw_norm = str(getattr(pred, "normalized_unit", "") or base).strip()
+    norm_unit = _extract_base_unit(raw_norm) or base
 
     return {
         "base_unit": base,

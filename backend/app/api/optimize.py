@@ -3,10 +3,12 @@ from datetime import datetime
 from fastapi import APIRouter, Body
 from sqlmodel import select
 
+from app.config import settings
 from app.logging import get_logger
 from app.schemas.plan import PlanRequest, PlanResponse
 from app.utils.timing import time_span
 from app.services.optimization.ilp_solver import ILPSolverOptions, IngredientOption, RecipeOption, solve_ilp
+from app.services.sku.instacart_client import instacart_client
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
 from app.services.allergens import get_all_allergen_codes
@@ -38,8 +40,6 @@ def list_allergens():
 @router.get("/stores")
 def list_stores(postal_code: str | None = None):
     """Return available stores for store filter dropdown. Uses postal for Instacart availability."""
-    from app.services.sku.instacart_client import instacart_client
-    from app.config import settings
     pc = (postal_code or "").strip() or settings.default_postal_code
     try:
         data = instacart_client.get_stores(pc)
@@ -145,9 +145,6 @@ def refresh_skus(body: dict | None = Body(default=None)) -> dict:
     Body: { "ingredient_ids": [1,2,3], "postal_code": "10001" } — both optional.
     Omit ingredient_ids to refresh all needing it. Enqueues fetch_skus_for_ingredient tasks.
     """
-    from app.storage.repositories import get_ingredients_needing_sku_refresh
-    from app.workers.tasks import refresh_expired_skus
-
     body = body or {}
     ingredient_ids = body.get("ingredient_ids")
     postal_code = body.get("postal_code")
@@ -168,9 +165,6 @@ def reset_skus(body: dict | None = Body(default=None)) -> dict:
     Body: { "ingredient_ids": [1,2,3], "postal_code": "10001" }. ingredient_ids required.
     Use to force full re-fetch of prices. Parsed data (Recipe/Ingredient) is unchanged.
     """
-    from app.storage.repositories import delete_skus_for_ingredients, get_ingredients_needing_sku_refresh
-    from app.workers.tasks import refresh_expired_skus
-
     body = body or {}
     ingredient_ids = body.get("ingredient_ids")
     if not ingredient_ids:
@@ -359,6 +353,7 @@ def plan(request: PlanRequest) -> PlanResponse:
             recipe_by_id = {r.id: r for r in recipes}
             recipe_details_list: list[dict] = []
             ingredient_totals: dict[int, float] = {}
+            unit_by_ingredient: dict[int, str] = {}  # from RecipeIngredient.unit (per-recipe normalized)
             menu_card_list: list[dict] = []
 
             for rid, batches in (result.get("recipes") or {}).items():
@@ -380,6 +375,7 @@ def plan(request: PlanRequest) -> PlanResponse:
                     if ri.recipe_id != bid:
                         continue
                     ingredient_totals[ri.ingredient_id] = ingredient_totals.get(ri.ingredient_id, 0) + ri.quantity * scale
+                    unit_by_ingredient[ri.ingredient_id] = ri.unit
                 first_line = (recipe.instructions or "").split(".")[0].strip()
                 if first_line:
                     first_line += "."
@@ -401,10 +397,12 @@ def plan(request: PlanRequest) -> PlanResponse:
                 ing = ingredients_by_id.get(ing_id)  # already loaded above
                 if not ing:
                     continue
+                # Use unit from RecipeIngredient (normalized at parse); fallback to Ingredient.base_unit
+                display_unit = unit_by_ingredient.get(ing_id) or ing.base_unit
                 consolidated_shopping_list.append({
                     "ingredient": ing.canonical_name,
                     "quantity": round(total_qty, 2),
-                    "unit": _sanitize_base_unit(ing.base_unit) or "units",
+                    "unit": _sanitize_base_unit(display_unit) or "units",
                 })
 
         status = result.get("status", "Unknown")

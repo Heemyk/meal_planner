@@ -8,7 +8,12 @@ from app.services.llm.sku_filter import filter_skus
 from app.services.llm.sku_size_converter import convert_sku_size
 from app.services.sku.instacart_client import instacart_client
 from app.storage.db import get_session
-from app.storage.repositories import get_ingredient_by_id, set_ingredient_sku_unavailable, upsert_skus
+from app.storage.repositories import (
+    get_ingredient_by_id,
+    get_ingredients_needing_sku_refresh,
+    set_ingredient_sku_unavailable,
+    upsert_skus,
+)
 from app.workers.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -77,6 +82,8 @@ def fetch_skus_for_ingredient(self, ingredient_id: int, ingredient_name: str, po
                     size_str = sku.get("size") or ""
                     product_name = sku.get("name") or ""
                     qty, display = convert_sku_size(size_str, base_unit, product_name)
+                    # DB size_display is VARCHAR(64); truncate in case LLM leaked reasoning
+                    safe_display = (display or size_str or "")[:64]
                     skus_to_upsert.append({
                         "name": sku.get("name"),
                         "brand": sku.get("brand"),
@@ -84,7 +91,7 @@ def fetch_skus_for_ingredient(self, ingredient_id: int, ingredient_name: str, po
                         "price": _parse_price(sku.get("price")),
                         "price_per_unit": sku.get("price_per_unit"),
                         "quantity_in_base_unit": qty,
-                        "size_display": display or size_str,
+                        "size_display": safe_display or size_str,
                     })
                 upsert_skus(
                     session=session,
@@ -122,8 +129,6 @@ def refresh_expired_skus(ingredient_ids: list[int] | None = None, postal_code: s
     - ingredient_ids: optional, limit to these IDs; None = all needing refresh
     - postal_code: optional, default_postal_code used if not provided
     """
-    from app.storage.repositories import get_ingredients_needing_sku_refresh
-
     postal = postal_code or settings.default_postal_code
     with get_session() as session:
         ingredients = get_ingredients_needing_sku_refresh(session, ingredient_ids)

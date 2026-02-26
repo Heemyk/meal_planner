@@ -11,28 +11,34 @@ import io
 import json
 import queue
 import threading
+import time
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from fastapi import APIRouter, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.config import settings
 from app.logging import get_logger
-from app.services.graph.graph_queries import link_recipe_ingredient, upsert_ingredient, upsert_recipe
+from app.services.llm.ingredient_matcher import match_ingredient
+from app.services.llm.unit_normalizer import normalize_units
 from app.services.llm.dspy_client import configure_dspy
 from app.services.parsing.recipe_parser import count_ingredients_in_text, infer_meal_type, parse_recipe_text
 from app.services.allergens import infer_allergens_from_ingredients
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
 from app.storage.repositories import (
+    delete_skus_for_ingredients,
     create_recipe,
     create_recipe_ingredients,
     get_ingredients,
     get_or_create_ingredient,
 )
 from app.workers.tasks import fetch_skus_for_ingredient
+from app.workers.celery_app import celery_app
+from redis import Redis
 from sqlmodel import select
 
 router = APIRouter()
@@ -95,8 +101,6 @@ def _get_ingredient_ids_unavailable() -> set:
 
 
 def _match_and_normalize(ingredient_text: str, existing_names: list[str]):
-    from app.services.llm.ingredient_matcher import match_ingredient
-    from app.services.llm.unit_normalizer import normalize_units
     match = match_ingredient(ingredient_text, existing_names)
     canonical_name = (match.get("canonical_name") or "").strip().lower() or "unknown"
     normalized = normalize_units(ingredient_text, canonical_name=canonical_name)
@@ -111,8 +115,6 @@ def _run_processing(
     event_queue: queue.Queue,
 ):
     """Sync processing loop. Puts (event, data) on queue after each significant step."""
-    from app.config import settings
-
     configure_dspy()
     files_progress = [
         {
@@ -137,7 +139,6 @@ def _run_processing(
     parsing_done = threading.Event()
 
     def _sku_poll_loop():
-        import time
         last_job_with_skus = -1
         last_job_unavailable = -1
         last_heartbeat = 0
@@ -201,7 +202,6 @@ def _run_processing(
                     ),
                 )
                 recipes_created += 1
-                upsert_recipe(recipe_id=recipe.id, name=recipe.name, servings=recipe.servings)
 
                 recipe_ingredients = []
                 recipe_ingredient_names = []
@@ -224,18 +224,27 @@ def _run_processing(
                     match, normalized = results[ingredient_text]
                     canonical_name = (match.get("canonical_name") or "").strip().lower() or "unknown"
                     ingredient = existing_lookup.get(canonical_name)
+                    new_base = (normalized.get("base_unit") or "count").strip().lower()
                     if not ingredient:
-                        base_unit = normalized.get("base_unit") or "count"
                         ingredient = get_or_create_ingredient(
                             session,
                             name=canonical_name,
                             canonical_name=canonical_name,
-                            base_unit=base_unit,
+                            base_unit=new_base,
                             base_unit_qty=normalized.get("base_unit_qty", 1.0),
                         )
                         existing_lookup[canonical_name] = ingredient
                         existing_names.append(canonical_name)
                         ingredients_created += 1
+                    else:
+                        cur = (ingredient.base_unit or "").strip().lower()
+                        if new_base in ("g", "ml", "count", "tbsp", "tsp") and cur != new_base:
+                            ingredient.base_unit = new_base
+                            session.add(ingredient)
+                            session.commit()
+                            session.refresh(ingredient)
+                            delete_skus_for_ingredients(session, [ingredient.id])
+                            session.commit()
                     fetch_skus_for_ingredient.delay(ingredient.id, canonical_name, effective_postal)
                     sku_jobs += 1
                     files_progress[file_idx]["ingredients_added"] += 1
@@ -257,12 +266,6 @@ def _run_processing(
                         )
                     )
                     recipe_ingredient_names.append(canonical_name)
-                    upsert_ingredient(ingredient_id=ingredient.id, name=ingredient.canonical_name)
-                    link_recipe_ingredient(
-                        recipe_id=recipe.id,
-                        ingredient_id=ingredient.id,
-                        qty=normalized["normalized_qty"],
-                    )
 
                 create_recipe_ingredients(session, recipe_ingredients)
                 recipe.allergens = infer_allergens_from_ingredients(recipe_ingredient_names)
@@ -305,9 +308,6 @@ def get_utilization() -> dict:
     - sku_queue_length: pending SKU tasks in Redis (approximate).
     - timing_hint: grep '[TIMING]' in logs to see actual runtimes.
     """
-    from app.config import settings
-    from app.workers.celery_app import celery_app
-
     out = {
         "ingredient_workers": {
             "max_per_recipe": settings.ingredient_batch_max_workers,
@@ -325,7 +325,6 @@ def get_utilization() -> dict:
         },
     }
     try:
-        from redis import Redis
         conn = Redis.from_url(settings.redis_url)
         out["sku_queue_length"] = conn.llen("celery")
     except Exception:
@@ -350,8 +349,6 @@ async def upload_recipes(
     Upload recipes. Returns 202 immediately with job_id and files (real ingredient counts from structural parse).
     Processing runs in background. Connect to GET /recipes/upload/stream/{job_id} for SSE events.
     """
-    from app.config import settings
-
     effective_postal = (postal_code or "").strip() or settings.default_postal_code
     job_id = str(uuid.uuid4())
 
@@ -408,7 +405,6 @@ async def stream_upload_progress(job_id: str):
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
             )
-        from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "Job not found or expired"}, status_code=404)
 
     async def generate():

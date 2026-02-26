@@ -35,5 +35,4 @@
 
 ## Common Issues
 - **LLM errors:** validate `LLM_API_KEY` and model name.
-- **Neo4j auth:** verify `NEO4J_AUTH` matches settings.
 - **SKU jobs:** ensure Redis is running and worker is up.

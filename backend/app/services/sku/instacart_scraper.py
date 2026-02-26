@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import pickle
 import time
 import uuid
@@ -15,7 +16,10 @@ from typing import Any
 
 import httpx
 from playwright.async_api import async_playwright
+from redis import Redis
+from redis.lock import Lock
 
+from app.config import settings
 from app.logging import get_logger
 
 logger = get_logger(__name__)
@@ -64,7 +68,6 @@ RETAILER_SHOP_IDS: dict[str, list[str]] = {
 FALLBACK_SHOP_IDS = ["8621", "557", "4893", "596274", "63766", "943", "3949", "602909"]
 
 def _cookie_path() -> Path:
-    import os
     return Path(os.environ.get("INSTACART_COOKIE_CACHE", "./.instacart_cookies.pkl"))
 
 
@@ -141,9 +144,33 @@ def _ensure_cookies(postal_code: str = "10001") -> dict[str, str]:
     cached = _load_cookies(postal_code)
     if cached:
         return cached
-    cookies = asyncio.run(_get_fresh_cookies(postal_code))
-    _save_cookies(cookies, postal_code)
-    return cookies
+    # Only one worker may fetch cookies at a time to avoid 6 parallel Playwright sessions
+    # overwhelming Instacart and timing out.
+    redis_client = Redis.from_url(settings.redis_url)
+    lock = Lock(
+        redis_client,
+        f"instacart:cookie_fetch:{postal_code or 'default'}",
+        timeout=90,
+    )
+    acquired = lock.acquire(blocking=True, blocking_timeout=120)
+    try:
+        if not acquired:
+            cached = _load_cookies(postal_code)
+            if cached:
+                return cached
+            raise RuntimeError("Could not acquire cookie fetch lock; retry task.")
+        cached = _load_cookies(postal_code)
+        if cached:
+            return cached
+        cookies = asyncio.run(_get_fresh_cookies(postal_code))
+        _save_cookies(cookies, postal_code)
+        return cookies
+    finally:
+        if acquired:
+            try:
+                lock.release()
+            except Exception:
+                pass
 
 
 def _graphql_request(

@@ -11,11 +11,6 @@ docker compose exec postgres psql -U tandem -d tandem -c "
   TRUNCATE TABLE sku, recipeingredient, menuplan, llmcalllog, recipe, ingredient RESTART IDENTITY CASCADE;
 "
 
-echo "Cleaning Neo4j..."
-docker compose exec neo4j cypher-shell -u neo4j -p password "
-  MATCH (n) DETACH DELETE n;
-"
-
 echo "Cleaning Redis..."
 docker compose exec redis redis-cli FLUSHALL
 

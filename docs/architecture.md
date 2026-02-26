@@ -3,7 +3,7 @@
 ## Overview
 - **Frontend:** React + Vite for recipe upload and plan generation.
 - **Backend:** FastAPI monolith with a Celery worker for SKU fetching.
-- **Datastores:** Postgres (relational), Neo4j (graph), Redis (queue + cache).
+- **Datastores:** Postgres (relational), Redis (queue + cache).
 - **LLM:** DSPy programs for ingredient matching, unit normalization, SKU filtering.
 
 ## Core Flow
@@ -16,7 +16,6 @@
 
 ## Minimal Services
 - **Backend API + Worker** share the same codebase to avoid microservice sprawl.
-- **Neo4j** is used for recipe-ingredient graph operations (synergy).
 - **Postgres** stores canonical entities and LLM/plan logs.
 
 ## Data Flow

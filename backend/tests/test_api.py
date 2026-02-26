@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlmodel import select
@@ -72,10 +73,6 @@ def test_recipe_upload(client, monkeypatch):
         "app.api.recipes.fetch_skus_for_ingredient",
         type("DummyTask", (), {"delay": staticmethod(lambda *_args, **_kwargs: None)}),
     )
-    monkeypatch.setattr("app.api.recipes.upsert_recipe", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.api.recipes.upsert_ingredient", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.api.recipes.link_recipe_ingredient", lambda *args, **kwargs: None)
-
     repo_root = Path(__file__).resolve().parents[2]
     file_path = repo_root / "intern-dataset-main" / "1.txt"
     with file_path.open("rb") as handle:
@@ -108,10 +105,6 @@ def test_recipe_upload_sets_allergens(client, monkeypatch, session):
         "app.api.recipes.fetch_skus_for_ingredient",
         type("DummyTask", (), {"delay": staticmethod(lambda *_args, **_kwargs: None)}),
     )
-    monkeypatch.setattr("app.api.recipes.upsert_recipe", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.api.recipes.upsert_ingredient", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.api.recipes.link_recipe_ingredient", lambda *args, **kwargs: None)
-
     content = b"""Test Milk Recipe (for 2 people)
 Ingredients:
 - 100 ml milk
@@ -158,8 +151,7 @@ def test_plan_endpoint(client, session):
         price_per_unit="$0.002/ml",
         retailer_slug="test",
         postal_code="10001",
-        expires_at=__import__("datetime").datetime.utcnow()
-        + __import__("datetime").timedelta(hours=1),
+        expires_at=datetime.utcnow() + timedelta(hours=1),
     )
     session.add(sku)
     session.commit()
@@ -181,7 +173,7 @@ def test_plan_with_custom_options(client, session):
     session.commit()
     session.refresh(ing)
     session.add(RecipeIngredient(recipe_id=recipe.id, ingredient_id=ing.id, quantity=100, unit="ml", original_text="100 ml milk"))
-    session.add(SKU(ingredient_id=ing.id, name="Milk", size="1000 ml", price=2.0, retailer_slug="test", postal_code="10001", expires_at=__import__("datetime").datetime.utcnow() + __import__("datetime").timedelta(hours=1)))
+    session.add(SKU(ingredient_id=ing.id, name="Milk", size="1000 ml", price=2.0, retailer_slug="test", postal_code="10001", expires_at=datetime.utcnow() + timedelta(hours=1)))
     session.commit()
     response = client.post(
         "/api/plan",

@@ -7,9 +7,23 @@ Loads the model once; no per-retrieval instantiation.
 import threading
 from typing import List
 
+import numpy as np
+
 from app.logging import get_logger
 
 logger = get_logger(__name__)
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None  # type: ignore[misc, assignment]
+
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+except ImportError:
+    TfidfVectorizer = None  # type: ignore[misc, assignment]
+    cosine_similarity = None  # type: ignore[misc, assignment]
 
 
 class EmbeddingService:
@@ -29,41 +43,34 @@ class EmbeddingService:
         with self._lock:
             if self._model is not None:
                 return
-            try:
-                from sentence_transformers import SentenceTransformer
-
+            if SentenceTransformer is not None:
                 self._model = SentenceTransformer("all-MiniLM-L6-v2")
                 self._backend = "st"
                 logger.info("embedding_service.loaded backend=sentence_transformers")
-            except ImportError:
-                pass
+            if self._model is None and TfidfVectorizer is not None and cosine_similarity is not None:
+
+                class _TFIDFRetriever:
+                    def retrieve(self, query: str, docs: List[str], k: int) -> List[str]:
+                        if not docs:
+                            return []
+                        vec = TfidfVectorizer(
+                            ngram_range=(1, 2), max_features=256, lowercase=True
+                        )
+                        all_texts = [query] + docs
+                        X = vec.fit_transform(all_texts)
+                        q = X[0:1]
+                        d = X[1:]
+                        sim = cosine_similarity(q, d)[0]
+                        idx = sim.argsort()[::-1][:k]
+                        return [docs[i] for i in idx]
+
+                self._model = _TFIDFRetriever()
+                self._backend = "tfidf"
+                logger.info("embedding_service.loaded backend=tfidf")
             if self._model is None:
-                try:
-                    from sklearn.feature_extraction.text import TfidfVectorizer
-                    from sklearn.metrics.pairwise import cosine_similarity
-
-                    class _TFIDFRetriever:
-                        def retrieve(self, query: str, docs: List[str], k: int) -> List[str]:
-                            if not docs:
-                                return []
-                            vec = TfidfVectorizer(
-                                ngram_range=(1, 2), max_features=256, lowercase=True
-                            )
-                            all_texts = [query] + docs
-                            X = vec.fit_transform(all_texts)
-                            q = X[0:1]
-                            d = X[1:]
-                            sim = cosine_similarity(q, d)[0]
-                            idx = sim.argsort()[::-1][:k]
-                            return [docs[i] for i in idx]
-
-                    self._model = _TFIDFRetriever()
-                    self._backend = "tfidf"
-                    logger.info("embedding_service.loaded backend=tfidf")
-                except ImportError:
-                    raise RuntimeError(
-                        "No embedding backend available. Install sentence-transformers or scikit-learn."
-                    ) from None
+                raise RuntimeError(
+                    "No embedding backend available. Install sentence-transformers or scikit-learn."
+                ) from None
 
     def retrieve_similar(
         self,
@@ -80,8 +87,6 @@ class EmbeddingService:
 
         with self._lock:
             if self._backend == "st":
-                import numpy as np
-
                 query_vec = self._model.encode([query])
                 doc_vecs = self._model.encode(docs)
                 scores = [

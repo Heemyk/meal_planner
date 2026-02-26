@@ -4,6 +4,7 @@ Uses the 10 most common food allergens (US FDA / international).
 Primary: LLM-based inference. Fallback: keyword matching.
 """
 
+from app.config import settings
 from app.logging import get_logger
 
 logger = get_logger(__name__)
@@ -53,8 +54,6 @@ def infer_allergens_from_ingredients(
     Primary: LLM (more robust for compound/hidden allergens).
     Fallback: keyword matching when LLM fails or use_llm=False.
     """
-    from app.config import settings
-
     if use_llm is None:
         use_llm = getattr(settings, "use_llm_allergens", True)
     if use_llm:

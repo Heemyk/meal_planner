@@ -10,7 +10,6 @@ from app.config import settings
 from app.logging import get_logger
 from app.utils.timing import time_span
 from app.schemas.recipe import RecipeUploadResponse
-from app.services.graph.graph_queries import link_recipe_ingredient, upsert_ingredient, upsert_recipe
 from app.services.llm.dspy_client import configure_dspy
 from app.services.llm.ingredient_matcher import match_ingredient
 from app.services.llm.unit_normalizer import normalize_units
@@ -18,7 +17,13 @@ from app.services.allergens import infer_allergens_from_ingredients
 from app.services.parsing.recipe_parser import infer_meal_type, parse_recipe_text
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient
-from app.storage.repositories import create_recipe, create_recipe_ingredients, get_ingredients, get_or_create_ingredient
+from app.storage.repositories import (
+    create_recipe,
+    create_recipe_ingredients,
+    delete_skus_for_ingredients,
+    get_ingredients,
+    get_or_create_ingredient,
+)
 from app.workers.tasks import fetch_skus_for_ingredient
 
 router = APIRouter()
@@ -87,7 +92,6 @@ async def upload_recipes(
                             ),
                         )
                         recipes_created += 1
-                        upsert_recipe(recipe_id=recipe.id, name=recipe.name, servings=recipe.servings)
 
                         recipe_ingredients: list[RecipeIngredient] = []
                         recipe_ingredient_names: list[str] = []
@@ -124,13 +128,13 @@ async def upload_recipes(
                             if not canonical_name:
                                 canonical_name = "unknown"
                             ingredient = existing_lookup.get(canonical_name)
+                            new_base = (normalized.get("base_unit") or "count").strip().lower()
                             if not ingredient:
-                                base_unit = normalized.get("base_unit") or "count"
                                 ingredient = get_or_create_ingredient(
                                     session,
                                     name=canonical_name,
                                     canonical_name=canonical_name,
-                                    base_unit=base_unit,
+                                    base_unit=new_base,
                                     base_unit_qty=normalized.get("base_unit_qty", 1.0),
                                 )
                                 existing_lookup[canonical_name] = ingredient
@@ -146,6 +150,29 @@ async def upload_recipes(
                                     ingredient.id, canonical_name, effective_postal
                                 )
                                 sku_jobs += 1
+                            else:
+                                # Repair stale base_unit when normalizer disagrees
+                                cur = (ingredient.base_unit or "").strip().lower()
+                                if new_base in ("g", "ml", "count", "tbsp", "tsp") and cur != new_base:
+                                    ingredient.base_unit = new_base
+                                    session.add(ingredient)
+                                    session.commit()
+                                    session.refresh(ingredient)
+                                    deleted = delete_skus_for_ingredients(session, [ingredient.id])
+                                    if deleted:
+                                        session.commit()
+                                    logger.info(
+                                        "ingredient.base_unit.repair id=%s name=%s old=%s new=%s deleted_skus=%s",
+                                        ingredient.id,
+                                        canonical_name,
+                                        cur,
+                                        new_base,
+                                        deleted,
+                                    )
+                                    fetch_skus_for_ingredient.delay(
+                                        ingredient.id, canonical_name, effective_postal
+                                    )
+                                    sku_jobs += 1
 
                             recipe_ingredients.append(
                                 RecipeIngredient(
@@ -157,10 +184,6 @@ async def upload_recipes(
                                 )
                             )
                             recipe_ingredient_names.append(canonical_name)
-                            upsert_ingredient(ingredient_id=ingredient.id, name=ingredient.canonical_name)
-                            link_recipe_ingredient(
-                                recipe_id=recipe.id, ingredient_id=ingredient.id, qty=normalized["normalized_qty"]
-                            )
 
                         create_recipe_ingredients(session, recipe_ingredients)
 
@@ -173,7 +196,7 @@ async def upload_recipes(
             total_ingredients = len(list(session.exec(select(Ingredient))))
             total_recipe_links = len(list(session.exec(select(RecipeIngredient))))
             logger.info(
-                "db.state postgres: recipes=%s ingredients=%s recipe_links=%s | neo4j: mirrored for synergy",
+                "db.state postgres: recipes=%s ingredients=%s recipe_links=%s",
                 total_recipes,
                 total_ingredients,
                 total_recipe_links,

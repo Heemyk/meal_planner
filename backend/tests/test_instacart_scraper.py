@@ -1,5 +1,6 @@
 """Tests for the Playwright-based Instacart scraper (instacart_scraper module)."""
 import tempfile
+from pathlib import Path
 
 from app.services.sku import instacart_scraper
 
@@ -268,7 +269,7 @@ def test_get_product_details_returns_placeholder(monkeypatch):
 def test_clear_cookie_cache(monkeypatch):
     """clear_cookie_cache removes cache file if it exists."""
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-        path = __import__("pathlib").Path(f.name)
+        path = Path(f.name)
     monkeypatch.setenv("INSTACART_COOKIE_CACHE", str(path))
     monkeypatch.setattr(instacart_scraper, "_cookie_path", lambda: path)
     monkeypatch.setattr(instacart_scraper, "_cookie_path_for_postal", lambda pc: path)

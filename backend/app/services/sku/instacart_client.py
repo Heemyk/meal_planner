@@ -4,6 +4,11 @@ import httpx
 
 from app.config import settings
 from app.logging import get_logger
+from app.services.sku.instacart_scraper import (
+    get_product_details as scraper_get_product_details,
+    get_stores as scraper_get_stores,
+    search_products as scraper_search_products,
+)
 
 logger = get_logger(__name__)
 
@@ -26,7 +31,6 @@ class InstacartClient:
     def get_stores(self, postal_code: str) -> dict:
         logger.info("instacart.get_stores postal_code=%s", postal_code)
         if _use_scraper():
-            from app.services.sku.instacart_scraper import get_stores as scraper_get_stores
             return scraper_get_stores(postal_code)
         url = f"{self._base_url}/get_stores"
         resp = httpx.get(
@@ -47,8 +51,7 @@ class InstacartClient:
             limit,
         )
         if _use_scraper():
-            from app.services.sku.instacart_scraper import search_products as scraper_search
-            return scraper_search(query, postal_code, retailer_slug, limit)
+            return scraper_search_products(query, postal_code, retailer_slug, limit)
         url = f"{self._base_url}/search_products"
         resp = httpx.get(
             url,
@@ -67,8 +70,7 @@ class InstacartClient:
     def get_product_details(self, item_id: str, shop_id: str, postal_code: str) -> dict:
         logger.info("instacart.get_product_details item_id=%s shop_id=%s", item_id, shop_id)
         if _use_scraper():
-            from app.services.sku.instacart_scraper import get_product_details as scraper_details
-            return scraper_details(item_id, shop_id, postal_code)
+            return scraper_get_product_details(item_id, shop_id, postal_code)
         url = f"{self._base_url}/get_product_details"
         resp = httpx.get(
             url,

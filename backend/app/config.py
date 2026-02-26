@@ -6,14 +6,10 @@ class Settings(BaseSettings):
     env: str = "local"
 
     postgres_dsn: str = "postgresql+psycopg2://tandem:tandem@postgres:5432/tandem"
-    neo4j_uri: str = "neo4j://neo4j:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = "password"
     redis_url: str = "redis://redis:6379/0"
 
     llm_provider: str = "openai"
     llm_model: str = "gpt-4o-mini"
-    llm_model_reasoning: str = "gpt-4o"  # Smarter model for math/reasoning (SKU conversion, etc.)
     llm_api_key: str = ""
     llm_temperature: float = 0.2
     llm_timeout_s: int = 30
@@ -24,7 +20,6 @@ class Settings(BaseSettings):
     sku_cache_ttl_hours: int = 24
 
     # Tune parallelism: ThreadPoolExecutor workers for ingredient match+normalize per recipe.
-    # Set INGREDIENT_BATCH_MAX_WORKERS in .env to override.
     ingredient_batch_max_workers: int = 8
 
     # Celery prefork concurrency for fetch_skus_for_ingredient tasks.

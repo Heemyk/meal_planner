@@ -3,6 +3,8 @@ Generate final materials: tone prompt, dish descriptions (with CoT for compositi
 Triggered post-plan via Generate Final Materials.
 """
 
+import dspy
+
 from app.services.llm.dspy_client import run_with_logging
 from app.services.llm.prompts import (
     DESCRIPTION_TONE_PROMPT_VERSION,
@@ -46,8 +48,6 @@ def _generate_tone(dish_names: list[str]) -> str:
     names_str = ", ".join(dish_names)
     prompt = TONE_PROMPT_TEMPLATE.format(dish_names=names_str)
     try:
-        import dspy
-
         class ToneSignature(dspy.Signature):
             """Infer menu tone from dish names. Output only the tone, 1-2 sentences."""
             prompt: str = dspy.InputField(desc="instructions and dish names")
@@ -84,8 +84,6 @@ def _generate_dish_description(
         instructions=inst,
     )
     try:
-        import dspy
-
         class DishDescriptionSignature(dspy.Signature):
             """Write menu-card description. Output only the description, 1-2 succinct sentences."""
             prompt: str = dspy.InputField(desc="full prompt with tone, dish, ingredients")
