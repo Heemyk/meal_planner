@@ -5,9 +5,10 @@ from app.logging import get_logger
 from app.utils.timing import time_span
 from app.services.llm.dspy_client import configure_dspy
 from app.services.llm.sku_filter import filter_skus
+from app.services.llm.sku_size_converter import convert_sku_size
 from app.services.sku.instacart_client import instacart_client
 from app.storage.db import get_session
-from app.storage.repositories import get_ingredient_by_id, upsert_skus
+from app.storage.repositories import get_ingredient_by_id, set_ingredient_sku_unavailable, upsert_skus
 from app.workers.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -60,22 +61,39 @@ def fetch_skus_for_ingredient(self, ingredient_id: int, ingredient_name: str, po
                         ingredient_id,
                     )
                     return {"status": "skipped", "ingredient_id": ingredient_id, "reason": "ingredient_not_found"}
+                base_unit = ingredient.base_unit or "count"
+                count = len(filtered)
+                if count == 0:
+                    set_ingredient_sku_unavailable(session, ingredient_id, unavailable=True)
+                    app_logger.info(
+                        "sku.fetch.success task_id=%s ingredient_id=%s count=0 retailer=%s (marked sku_unavailable)",
+                        task_id,
+                        ingredient_id,
+                        retailer_slug,
+                    )
+                    return {"status": "success", "ingredient_id": ingredient_id, "count": 0}
+                skus_to_upsert = []
+                for sku in filtered:
+                    size_str = sku.get("size") or ""
+                    product_name = sku.get("name") or ""
+                    qty, display = convert_sku_size(size_str, base_unit, product_name)
+                    skus_to_upsert.append({
+                        "name": sku.get("name"),
+                        "brand": sku.get("brand"),
+                        "size": sku.get("size"),
+                        "price": _parse_price(sku.get("price")),
+                        "price_per_unit": sku.get("price_per_unit"),
+                        "quantity_in_base_unit": qty,
+                        "size_display": display or size_str,
+                    })
                 upsert_skus(
                     session=session,
                     ingredient_id=ingredient_id,
-                    skus=[
-                        {
-                            "name": sku.get("name"),
-                            "brand": sku.get("brand"),
-                            "size": sku.get("size"),
-                            "price": _parse_price(sku.get("price")),
-                            "price_per_unit": sku.get("price_per_unit"),
-                        }
-                        for sku in filtered
-                    ],
+                    skus=skus_to_upsert,
                     retailer_slug=retailer_slug,
                     postal_code=postal_code,
                 )
+                set_ingredient_sku_unavailable(session, ingredient_id, unavailable=False)
             app_logger.info(
                 "sku.fetch.success task_id=%s ingredient_id=%s count=%s retailer=%s",
                 task_id,

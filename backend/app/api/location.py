@@ -16,7 +16,12 @@ DEFAULT_US_POSTAL = "10001"
 
 
 def _client_ip(request: Request) -> str:
-    """Extract client IP from request (respects X-Forwarded-For, X-Real-IP)."""
+    """Extract client IP from request (Cloudflare, proxies, direct)."""
+    # Cloudflare: real visitor IP (preferred when behind Cloudflare)
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip()
+    # X-Forwarded-For: leftmost = original client (client, proxy1, proxy2)
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()

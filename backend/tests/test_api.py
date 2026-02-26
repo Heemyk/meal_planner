@@ -65,6 +65,10 @@ def test_recipe_upload(client, monkeypatch):
         },
     )
     monkeypatch.setattr(
+        "app.api.recipes.infer_allergens_from_ingredients",
+        lambda names: [],  # Avoid LLM call in test
+    )
+    monkeypatch.setattr(
         "app.api.recipes.fetch_skus_for_ingredient",
         type("DummyTask", (), {"delay": staticmethod(lambda *_args, **_kwargs: None)}),
     )

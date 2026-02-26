@@ -1,0 +1,431 @@
+# Tandem Recipes — Frontend Architecture & Component Guide
+> A comprehensive reference for the UI framework, design system, and component library powering the Tandem Recipes culinary journey app.
+---
+## Table of Contents
+1. [Tech Stack](#tech-stack)
+2. [Design System](#design-system)
+   - [Color Tokens](#color-tokens)
+   - [Typography](#typography)
+   - [Spacing & Radius](#spacing--radius)
+   - [Effects & Utilities](#effects--utilities)
+3. [Core Components](#core-components)
+   - [SpotlightCard](#spotlightcard)
+   - [RecipeCard](#recipecard)
+   - [RecipeJourney](#recipejourney)
+4. [Page Architecture](#page-architecture)
+   - [Index (Home)](#index-home)
+5. [Data Layer](#data-layer)
+   - [TypeScript Interfaces](#typescript-interfaces)
+   - [Recipe Data Structure](#recipe-data-structure)
+6. [shadcn/ui Component Library](#shadcnui-component-library)
+7. [Animation System](#animation-system)
+8. [Routing](#routing)
+---
+## Tech Stack
+| Layer | Technology |
+|-------|-----------|
+| Framework | **React 18** with TypeScript |
+| Build Tool | **Vite** |
+| Styling | **Tailwind CSS** with semantic CSS variables |
+| UI Library | **shadcn/ui** (Radix primitives + CVA variants) |
+| Animation | **Framer Motion** v12 |
+| Icons | **Lucide React** |
+| Routing | **React Router DOM** v6 |
+| State | React `useState` / `useMemo` (no global store) |
+| Data Fetching | **TanStack React Query** (available, not yet active) |
+| Forms | **React Hook Form** + **Zod** (available) |
+---
+## Design System
+All styling flows through CSS custom properties defined in `src/index.css` and mapped to Tailwind in `tailwind.config.ts`. **No raw color values should appear in components** — always use semantic tokens.
+### Color Tokens
+Defined as HSL channel values in `:root` (e.g., `36 90% 55%`), consumed via `hsl(var(--token))`.
+| Token | HSL Value | Purpose |
+|-------|-----------|---------|
+| `--background` | `20 14% 6%` | Page/app background (dark charcoal) |
+| `--foreground` | `40 30% 92%` | Primary text color (warm off-white) |
+| `--card` | `20 10% 10%` | Card/surface background |
+| `--card-foreground` | `40 30% 92%` | Card text color |
+| `--primary` | `36 90% 55%` | Primary accent (warm amber/gold) |
+| `--primary-foreground` | `20 14% 6%` | Text on primary surfaces |
+| `--secondary` | `20 8% 16%` | Secondary surfaces |
+| `--secondary-foreground` | `40 20% 80%` | Text on secondary surfaces |
+| `--muted` | `20 6% 14%` | Muted backgrounds |
+| `--muted-foreground` | `30 10% 50%` | De-emphasized text |
+| `--accent` | `24 80% 50%` | Warm orange accent |
+| `--accent-foreground` | `40 30% 95%` | Text on accent surfaces |
+| `--destructive` | `0 72% 51%` | Error/danger states |
+| `--border` | `20 8% 18%` | Border color |
+| `--input` | `20 8% 18%` | Input border color |
+| `--ring` | `36 90% 55%` | Focus ring color |
+#### Custom Tokens (non-shadcn)
+| Token | HSL Value | Purpose |
+|-------|-----------|---------|
+| `--glow-primary` | `36 90% 55%` | Primary glow shadow color |
+| `--glow-accent` | `24 80% 50%` | Accent glow shadow color |
+| `--surface-elevated` | `20 10% 12%` | Elevated surface bg |
+| `--timeline-line` | `36 40% 25%` | Timeline connector line |
+| `--timeline-dot` | `36 90% 55%` | Timeline dot color |
+| `--step-complete` | `142 72% 40%` | Completed step (green) |
+| `--step-active` | `36 90% 55%` | Active step (amber) |
+| `--step-pending` | `20 6% 25%` | Pending step (muted) |
+#### Tailwind Mapping
+All tokens are mapped in `tailwind.config.ts` as Tailwind color utilities:
+```tsx
+// Usage in components:
+className="bg-background text-foreground"
+className="bg-primary text-primary-foreground"
+className="bg-card border-border"
+className="text-muted-foreground"
+className="bg-step-complete"
+```
+### Typography
+Two font families loaded via Google Fonts:
+| Font | Variable | Tailwind Class | Usage |
+|------|----------|----------------|-------|
+| **Playfair Display** | `--font-display` | `font-display` | Headings (h1, h2, h3 — auto-applied) |
+| **DM Sans** | `--font-body` | `font-body` | Body text (applied to `body` element) |
+**Base type rules** (in `@layer base`):
+- `body` uses `var(--font-body)` + `antialiased`
+- `h1, h2, h3` use `var(--font-display)` automatically
+### Spacing & Radius
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--radius` | `0.75rem` | Base border radius |
+| `lg` radius | `var(--radius)` = 0.75rem | Cards, buttons |
+| `md` radius | `calc(var(--radius) - 2px)` | Inner elements |
+| `sm` radius | `calc(var(--radius) - 4px)` | Small elements |
+### Effects & Utilities
+Custom Tailwind utilities defined in `@layer utilities` of `src/index.css`:
+| Class | Effect |
+|-------|--------|
+| `.glow-primary` | `box-shadow: 0 0 40px -10px hsl(var(--glow-primary) / 0.4)` — amber glow |
+| `.glow-accent` | `box-shadow: 0 0 30px -8px hsl(var(--glow-accent) / 0.3)` — warm accent glow |
+| `.text-gradient` | Gradient text from `--primary` to `--accent` (135deg) |
+| `.bg-grid` | Subtle grid background pattern using `--border` color |
+| `.spotlight` | Radial gradient spotlight following `--mouse-x` / `--mouse-y` custom properties |
+#### Keyframe Animations (CSS)
+| Animation | Duration | Effect |
+|-----------|----------|--------|
+| `float` | 6s infinite | Gentle vertical floating (±10px) |
+| `pulse-glow` | 3s infinite | Pulsing box-shadow glow |
+#### Keyframe Animations (Tailwind)
+| Class | Duration | Effect |
+|-------|----------|--------|
+| `animate-fade-in` | 0.3s ease-out | Fade in + translate up 10px |
+| `animate-scale-in` | 0.2s ease-out | Scale from 0.95 + fade |
+| `animate-float` | 6s infinite | Floating effect |
+| `animate-pulse-glow` | 3s infinite | Pulsing glow |
+| `animate-accordion-down` | 0.2s ease-out | Accordion open |
+| `animate-accordion-up` | 0.2s ease-out | Accordion close |
+---
+## Core Components
+### SpotlightCard
+**File:** `src/components/SpotlightCard.tsx`
+**Type:** Aceternity UI-inspired interactive card
+A card component that renders a radial gradient "spotlight" that follows the user's cursor on hover. Built with Framer Motion for lift animation.
+#### Props
+```ts
+interface SpotlightCardProps {
+  children: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}
+```
+#### Behavior
+- Tracks mouse position via `onMouseMove` relative to card bounds
+- Renders a `radial-gradient(400px circle)` at cursor position using `hsl(var(--primary) / 0.1)`
+- Spotlight opacity transitions from 0 → 1 on hover (500ms CSS transition)
+- Card lifts `-4px` on hover via `whileHover` (Framer Motion)
+- Uses semantic tokens: `border-border`, `bg-card`
+#### Usage
+```tsx
+<SpotlightCard onClick={handleClick} className="group">
+  <div className="p-6">
+    {/* card content */}
+  </div>
+</SpotlightCard>
+```
+---
+### RecipeCard
+**File:** `src/components/RecipeCard.tsx`
+**Type:** Recipe preview card (uses SpotlightCard)
+Displays a recipe summary with emoji, difficulty badge, metadata, and tags. Wraps `SpotlightCard` for the spotlight hover effect.
+#### Props
+```ts
+interface RecipeCardProps {
+  recipe: Recipe;
+  index: number;   // Used for staggered entrance animation
+  onClick: () => void;
+}
+```
+#### Visual Elements
+1. **Emoji + Difficulty badge** — Top row with color-coded difficulty
+2. **Title** — `font-display` heading, transitions to primary color on hover
+3. **Subtitle + Description** — Muted text with `line-clamp-2`
+4. **Metadata row** — Clock (time), Users (servings), ChefHat (steps)
+5. **Tags** — Rounded pills using `bg-secondary`
+#### Difficulty Color Map
+| Difficulty | Style |
+|-----------|-------|
+| `easy` | `bg-step-complete/20 text-step-complete` (green) |
+| `medium` | `bg-primary/20 text-primary` (amber) |
+| `hard` | `bg-destructive/20 text-destructive` (red) |
+#### Animation
+- **Entrance:** `whileInView` — fades in + slides up (30px), staggered by `index * 0.1s`
+- **Viewport:** `once: true`, margin `-50px`
+---
+### RecipeJourney
+**File:** `src/components/RecipeJourney.tsx`
+**Type:** Full-screen guided cooking experience
+The core interactive component. Manages a multi-step cooking flow with progress tracking, ingredient overview, step-by-step instructions, and a completion celebration.
+#### Props
+```ts
+interface RecipeJourneyProps {
+  recipe: Recipe;
+  onBack: () => void;
+}
+```
+#### State
+| State | Type | Purpose |
+|-------|------|---------|
+| `currentStep` | `number` | Active step index (`-1` = ingredient overview) |
+| `completedSteps` | `Set<number>` | Set of completed step IDs |
+#### Computed Values
+- `totalSteps` = `recipe.steps.length`
+- `progress` = `(completedSteps.size / totalSteps) * 100` (0% at overview)
+#### Sections
+##### 1. Sticky Header (always visible)
+- **Back button** — Returns to recipe list
+- **Recipe title** — With emoji, truncated
+- **Progress counter** — `{completed}/{total}`
+- **Progress bar** — Animated width using Framer Motion, `bg-primary`
+- Blurred background: `bg-background/80 backdrop-blur-xl`
+##### 2. Step Navigation Pills
+- **Ingredients pill** — Always first, highlighted when `currentStep === -1`
+- **Step number circles** — w-8 h-8 rounded-full
+  - Completed: `bg-step-complete` with Check icon
+  - Active: `bg-primary` with `glow-primary`
+  - Pending: `bg-secondary`
+##### 3. Ingredients Overview (currentStep === -1)
+- **Recipe hero** — Large emoji, title, description, metadata icons
+- **Grouped ingredients** — Organized by category with emoji icons:
+  - 🥬 produce, 🥩 protein, 🫙 pantry, 🧀 dairy, 🌶️ spice
+- Each ingredient: `bg-secondary/50` row with name + amount
+- **Start Cooking CTA** — Full-width `bg-primary` button with `glow-primary`
+##### 4. Step Detail View (currentStep >= 0)
+- **Step label** — "Step X of Y" in primary color, uppercase tracking
+- **Instruction card** — `bg-card border-border rounded-2xl` with large text
+- **Duration** — Clock icon + duration text (if present)
+- **Tip callout** — `bg-primary/10 border-primary/20` with Lightbulb icon
+- **Navigation** — Previous (secondary) + Mark Complete (primary)
+- Complete button changes to green check when marked done
+##### 5. Completion Celebration
+Appears when `completedSteps.size === totalSteps`:
+- `bg-step-complete/10 border-step-complete/20` container
+- 🎉 emoji + "All Done!" heading
+- Back to Recipes button
+#### Animations
+- Views transition with `AnimatePresence mode="wait"`
+- Ingredients overview: slides in from left (`x: -20`)
+- Steps: slide in from right (`x: 30`)
+- Completion: scales in from 0.9
+- Progress bar: `duration: 0.4, ease: "easeOut"`
+---
+## Page Architecture
+### Index (Home)
+**File:** `src/pages/Index.tsx`
+The main (and currently only) page. Manages recipe selection and transitions between the list view and journey view.
+#### State
+| State | Type | Purpose |
+|-------|------|---------|
+| `selectedRecipe` | `string \| null` | ID of selected recipe |
+| `search` | `string` | Search query |
+| `activeCategory` | `string` | Active filter category |
+#### Layout Structure
+```
+<div className="min-h-screen bg-background relative">
+  <!-- Fixed bg-grid overlay (30% opacity) -->
+  <!-- Fixed ambient glow blob (primary/5) -->
+  
+  <AnimatePresence mode="wait">
+    {selectedRecipe ? <RecipeJourney /> : <ListView />}
+  </AnimatePresence>
+</div>
+```
+#### List View Sections
+1. **Hero** — Badge ("Your Culinary Journey"), gradient title, subtitle
+2. **Search bar** — Full-width input with Search icon, `bg-secondary border-border`
+3. **Category filters** — Horizontal scrollable pills, derived from recipe data
+4. **Recipe grid** — `sm:grid-cols-2 lg:grid-cols-3 gap-5`
+5. **Empty state** — Centered muted message
+---
+## Data Layer
+### TypeScript Interfaces
+**File:** `src/data/recipes.ts`
+```ts
+interface RecipeStep {
+  id: number;           // Unique step identifier
+  instruction: string;  // Full step instruction text
+  duration?: string;    // Optional time estimate (e.g., "10 min")
+  tip?: string;         // Optional cooking tip
+}
+interface Ingredient {
+  name: string;         // Ingredient name
+  amount: string;       // Quantity + unit
+  category: "produce" | "protein" | "pantry" | "dairy" | "spice";
+}
+interface Recipe {
+  id: string;           // URL-safe unique ID
+  title: string;        // Display name
+  subtitle: string;     // Short descriptor
+  description: string;  // Full description paragraph
+  difficulty: "easy" | "medium" | "hard";
+  totalTime: string;    // Human-readable time
+  servings: number;
+  category: string;     // Filter category (e.g., "Pasta", "Seafood")
+  emoji: string;        // Visual emoji identifier
+  ingredients: Ingredient[];
+  steps: RecipeStep[];
+  tags: string[];       // Searchable tags
+}
+```
+### Recipe Data Structure
+Currently ships with **5 recipes**:
+| Recipe | Category | Difficulty | Steps |
+|--------|----------|-----------|-------|
+| Creamy Tuscan Pasta | Pasta | Easy | 7 |
+| Miso Glazed Salmon | Seafood | Medium | 7 |
+| Spiced Shakshuka | Brunch | Easy | 7 |
+| Thai Basil Chicken | Stir-Fry | Medium | 6 |
+| Chocolate Lava Cake | Dessert | Hard | 7 |
+---
+## shadcn/ui Component Library
+Pre-installed shadcn/ui components available for use. All are configured with the project's design tokens.
+### Available Components
+| Component | File | Radix Primitive |
+|-----------|------|-----------------|
+| Accordion | `ui/accordion.tsx` | `@radix-ui/react-accordion` |
+| Alert Dialog | `ui/alert-dialog.tsx` | `@radix-ui/react-alert-dialog` |
+| Alert | `ui/alert.tsx` | — |
+| Aspect Ratio | `ui/aspect-ratio.tsx` | `@radix-ui/react-aspect-ratio` |
+| Avatar | `ui/avatar.tsx` | `@radix-ui/react-avatar` |
+| Badge | `ui/badge.tsx` | — |
+| Breadcrumb | `ui/breadcrumb.tsx` | — |
+| Button | `ui/button.tsx` | — (CVA variants) |
+| Calendar | `ui/calendar.tsx` | `react-day-picker` |
+| Card | `ui/card.tsx` | — |
+| Carousel | `ui/carousel.tsx` | `embla-carousel-react` |
+| Chart | `ui/chart.tsx` | `recharts` |
+| Checkbox | `ui/checkbox.tsx` | `@radix-ui/react-checkbox` |
+| Collapsible | `ui/collapsible.tsx` | `@radix-ui/react-collapsible` |
+| Command | `ui/command.tsx` | `cmdk` |
+| Context Menu | `ui/context-menu.tsx` | `@radix-ui/react-context-menu` |
+| Dialog | `ui/dialog.tsx` | `@radix-ui/react-dialog` |
+| Drawer | `ui/drawer.tsx` | `vaul` |
+| Dropdown Menu | `ui/dropdown-menu.tsx` | `@radix-ui/react-dropdown-menu` |
+| Form | `ui/form.tsx` | `react-hook-form` |
+| Hover Card | `ui/hover-card.tsx` | `@radix-ui/react-hover-card` |
+| Input | `ui/input.tsx` | — |
+| Input OTP | `ui/input-otp.tsx` | `input-otp` |
+| Label | `ui/label.tsx` | `@radix-ui/react-label` |
+| Menubar | `ui/menubar.tsx` | `@radix-ui/react-menubar` |
+| Navigation Menu | `ui/navigation-menu.tsx` | `@radix-ui/react-navigation-menu` |
+| Pagination | `ui/pagination.tsx` | — |
+| Popover | `ui/popover.tsx` | `@radix-ui/react-popover` |
+| Progress | `ui/progress.tsx` | `@radix-ui/react-progress` |
+| Radio Group | `ui/radio-group.tsx` | `@radix-ui/react-radio-group` |
+| Resizable | `ui/resizable.tsx` | `react-resizable-panels` |
+| Scroll Area | `ui/scroll-area.tsx` | `@radix-ui/react-scroll-area` |
+| Select | `ui/select.tsx` | `@radix-ui/react-select` |
+| Separator | `ui/separator.tsx` | `@radix-ui/react-separator` |
+| Sheet | `ui/sheet.tsx` | `@radix-ui/react-dialog` |
+| Sidebar | `ui/sidebar.tsx` | — |
+| Skeleton | `ui/skeleton.tsx` | — |
+| Slider | `ui/slider.tsx` | `@radix-ui/react-slider` |
+| Sonner | `ui/sonner.tsx` | `sonner` |
+| Switch | `ui/switch.tsx` | `@radix-ui/react-switch` |
+| Table | `ui/table.tsx` | — |
+| Tabs | `ui/tabs.tsx` | `@radix-ui/react-tabs` |
+| Textarea | `ui/textarea.tsx` | — |
+| Toast | `ui/toast.tsx` | `@radix-ui/react-toast` |
+| Toggle | `ui/toggle.tsx` | `@radix-ui/react-toggle` |
+| Toggle Group | `ui/toggle-group.tsx` | `@radix-ui/react-toggle-group` |
+| Tooltip | `ui/tooltip.tsx` | `@radix-ui/react-tooltip` |
+### Button Variants
+```ts
+variants: {
+  variant: {
+    default:     "bg-primary text-primary-foreground hover:bg-primary/90",
+    destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+    outline:     "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+    secondary:   "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+    ghost:       "hover:bg-accent hover:text-accent-foreground",
+    link:        "text-primary underline-offset-4 hover:underline",
+  },
+  size: {
+    default: "h-10 px-4 py-2",
+    sm:      "h-9 rounded-md px-3",
+    lg:      "h-11 rounded-md px-8",
+    icon:    "h-10 w-10",
+  },
+}
+```
+---
+## Animation System
+### Framer Motion Patterns
+Used across all custom components:
+| Pattern | Usage |
+|---------|-------|
+| `AnimatePresence mode="wait"` | Page/view transitions (Index ↔ Journey) |
+| `motion.div initial/animate/exit` | Enter/exit transitions for views |
+| `whileInView` | Scroll-triggered card entrance animations |
+| `whileHover / whileTap` | Interactive button/card feedback |
+| `viewport={{ once: true }}` | One-time scroll triggers |
+### Standard Transition Presets
+```ts
+// Page transitions
+{ duration: 0.3 }
+// Card entrances (staggered)
+{ duration: 0.5, delay: index * 0.1 }
+// Progress bar
+{ duration: 0.4, ease: "easeOut" }
+// Button hover lift
+{ y: -4, transition: { duration: 0.2 } }
+```
+---
+## Routing
+**File:** `src/App.tsx`
+| Path | Component | Description |
+|------|-----------|-------------|
+| `/` | `Index` | Home page with recipe list + journey |
+| `*` | `NotFound` | Catch-all 404 page |
+Routing is handled by **React Router DOM v6** with `BrowserRouter`. Currently a single-page app where the journey view is managed via local state rather than URL params.
+---
+## File Structure
+```
+src/
+├── App.tsx                    # Root app with routing + providers
+├── App.css                    # (unused)
+├── index.css                  # Design system tokens + utilities
+├── main.tsx                   # React entry point
+├── vite-env.d.ts              # Vite type declarations
+├── components/
+│   ├── NavLink.tsx            # Navigation link component
+│   ├── RecipeCard.tsx         # Recipe preview card
+│   ├── RecipeJourney.tsx      # Guided cooking flow
+│   ├── SpotlightCard.tsx      # Aceternity-inspired spotlight card
+│   └── ui/                    # 40+ shadcn/ui components
+├── data/
+│   └── recipes.ts             # Recipe interfaces + seed data
+├── hooks/
+│   ├── use-mobile.tsx         # Mobile breakpoint hook
+│   └── use-toast.ts           # Toast notification hook
+├── lib/
+│   └── utils.ts               # cn() utility (clsx + tailwind-merge)
+├── pages/
+│   ├── Index.tsx              # Home page
+│   └── NotFound.tsx           # 404 page
+└── test/
+    ├── setup.ts               # Vitest setup
+    └── example.test.ts        # Example test
+```

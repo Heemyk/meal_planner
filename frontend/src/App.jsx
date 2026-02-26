@@ -3,15 +3,20 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   createPlan,
   uploadRecipesStream,
+  getProgress,
+  uploadStart,
   getIngredientsWithSkus,
   getRecipes,
   getLocation,
+  getStores,
+  generateMaterials,
 } from "./api.js";
 import { logger } from "./logger.js";
-import { AuroraBackground } from "./components/AuroraBackground.jsx";
+import { AppBackground } from "./components/AppBackground.jsx";
 import { ProgressBar } from "./components/ProgressBar.jsx";
 import { IngredientCard } from "./components/IngredientCard.jsx";
 import { RecipeCard } from "./components/RecipeCard.jsx";
+import { MenuCardEditor } from "./components/MenuCardEditor.jsx";
 import { cn } from "./lib/utils.js";
 
 const uiLogger = logger.child("ui");
@@ -24,27 +29,35 @@ export default function App() {
   const [ingredients, setIngredients] = useState([]);
   const [recipes, setRecipes] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [ingredientsProgress, setIngredientsProgress] = useState({
-    added: 0,
-    total: 1,
-  });
-  const [pricingProgress, setPricingProgress] = useState({
-    withSkus: 0,
-    total: 1,
-  });
+  const [fileProgress, setFileProgress] = useState([]);
+  const [progressExpanded, setProgressExpanded] = useState(false);
   const [streamComplete, setStreamComplete] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [location, setLocation] = useState({ postal_code: null, in_us: true, error: null });
+  const [manualPostalCode, setManualPostalCode] = useState("");
   const [lpOptions, setLpOptions] = useState({
     timeLimitSeconds: 10,
     batchPenalty: 0.0001,
   });
-  const [showLpOptions, setShowLpOptions] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [mealConfig, setMealConfig] = useState({ appetizer: 0, entree: 1, dessert: 0, side: 0 });
   const [storeSlugs, setStoreSlugs] = useState([]);
-  const [storeFilterInput, setStoreFilterInput] = useState("");
+  const [stores, setStores] = useState([]);
   const [allergens, setAllergens] = useState([]);
   const [excludeAllergens, setExcludeAllergens] = useState([]);
+  const [materialsEditorOpen, setMaterialsEditorOpen] = useState(false);
+  const [materialsData, setMaterialsData] = useState(null);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [activeMealFilter, setActiveMealFilter] = useState("all");
+
+  const filteredRecipes = recipes.filter((r) => {
+    const matchesSearch = !search.trim() || (r.name || "").toLowerCase().includes(search.toLowerCase());
+    const matchesMeal = activeMealFilter === "all" || (r.meal_type || "entree") === activeMealFilter;
+    return matchesSearch && matchesMeal;
+  });
+
+  const mealTypes = ["all", "appetizer", "entree", "dessert", "side"];
 
   const fetchLocation = useCallback(async () => {
     try {
@@ -94,6 +107,20 @@ export default function App() {
     fetchLocation();
   }, [fetchLocation]);
 
+  const fetchStores = useCallback(async () => {
+    const pc = manualPostalCode.trim() || location.postal_code;
+    try {
+      const data = await getStores(pc);
+      setStores(data.stores || []);
+    } catch {
+      setStores([]);
+    }
+  }, [manualPostalCode, location.postal_code]);
+
+  useEffect(() => {
+    fetchStores();
+  }, [fetchStores]);
+
   useEffect(() => {
     fetchAllergens();
   }, [fetchAllergens]);
@@ -109,41 +136,88 @@ export default function App() {
     setPlanResult(null);
     setIsUploading(true);
     setStreamComplete(false);
-    setIngredientsProgress({ added: 0, total: 1 });
-    setPricingProgress({ withSkus: 0, total: 1 });
+    setFileProgress([]);
+    setProgressExpanded(false);
+    const jobId = crypto.randomUUID?.() || `job-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    // Create progress entry immediately so bars show before/during upload
+    const fileCount = Math.max(1, Array.isArray(files) ? files.length : (files?.length ?? 1));
+    try {
+      const startData = await uploadStart(jobId, fileCount);
+      if (startData?.files?.length) {
+        setFileProgress(startData.files.map((f, i) => ({ ...f, _id: `${f.name}-${i}` })));
+      } else if (fileCount > 0) {
+        // Fallback if API doesn't return files (e.g. old backend)
+        setFileProgress(
+          Array.from({ length: fileCount }, (_, i) => ({
+            name: `file_${i + 1}`,
+            ingredients_added: 0,
+            ingredients_total: 1,
+            ingredients_with_skus: 0,
+            sku_total: 1,
+            _id: `file_${i}`,
+          }))
+        );
+      }
+    } catch {
+      // Fallback: show placeholder bars so user sees something
+      setFileProgress(
+        Array.from({ length: fileCount }, (_, i) => ({
+          name: `file_${i + 1}`,
+          ingredients_added: 0,
+          ingredients_total: 1,
+          ingredients_with_skus: 0,
+          sku_total: 1,
+          _id: `file_${i}`,
+        }))
+      );
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const data = await getProgress(jobId);
+        if (data?.files?.length) {
+          setFileProgress((prev) =>
+            data.files.map((f, i) => {
+              const existing = prev.find((p) => p.name === f.name && (p.ingredients_total ?? 0) === (f.ingredients_total ?? 0));
+              return { ...f, _id: existing?._id ?? `${f.name}-${i}` };
+            })
+          );
+        }
+      } catch {
+        // Ignore poll errors
+      }
+    }, 400);
 
     try {
-      uiLogger.info("upload.click");
-      await uploadRecipesStream(files, (event, data) => {
-        if (event === "ingredient_added") {
-          setIngredientsProgress({
-            added: data.ingredients_added ?? 0,
-            total: Math.max(data.ingredients_total ?? 1, data.ingredients_added ?? 1),
-          });
-        } else if (event === "upload_complete") {
-          setIngredientsProgress({
-            added: data.ingredients_created ?? 0,
-            total: Math.max(data.ingredients_created ?? 1, 1),
-          });
-          setPricingProgress({
-            withSkus: 0,
-            total: data.ingredients_created ?? 1,
-          });
-        } else if (event === "sku_progress") {
-          setPricingProgress({
-            withSkus: data.ingredients_with_skus ?? 0,
-            total: Math.max(data.ingredients_total ?? 1, 1),
-          });
-        } else if (event === "stream_complete") {
-          setStreamComplete(true);
-          fetchIngredients();
-          fetchRecipes();
-        }
-      }, location.postal_code);
+      uiLogger.info("upload.click", { jobId });
+      await uploadRecipesStream(
+        files,
+        (event, data) => {
+          if (data.files?.length && ["upload_started", "ingredient_added", "upload_complete", "sku_progress"].includes(event)) {
+            setFileProgress((prev) =>
+              data.files.map((f, i) => {
+                const existing = prev.find((p) => p.name === f.name && (p.ingredients_total ?? 0) === (f.ingredients_total ?? 0));
+                return { ...f, _id: existing?._id ?? `${f.name}-${i}` };
+              })
+            );
+          }
+          if (event === "stream_complete") {
+            clearInterval(pollInterval);
+            setStreamComplete(true);
+            fetchIngredients();
+            fetchRecipes();
+          }
+        },
+        manualPostalCode.trim() || location.postal_code,
+        jobId
+      );
     } catch (err) {
       uiLogger.error("upload.failed", err);
       setError(err.message);
+      clearInterval(pollInterval);
     } finally {
+      clearInterval(pollInterval);
       setIsUploading(false);
     }
   };
@@ -152,7 +226,7 @@ export default function App() {
     setError(null);
     try {
       uiLogger.info("plan.click", { targetServings });
-      const result = await createPlan(Number(targetServings), location.postal_code, {
+      const result = await createPlan(Number(targetServings), manualPostalCode.trim() || location.postal_code, {
         ...lpOptions,
         mealConfig: Object.fromEntries(
           Object.entries(mealConfig).filter(([, v]) => v != null && v > 0)
@@ -167,32 +241,71 @@ export default function App() {
     }
   };
 
-  const pricingDone = pricingProgress.total > 0 && pricingProgress.withSkus >= pricingProgress.total;
-  const showProgressBars = isUploading || (!pricingDone && (ingredientsProgress.added > 0 || pricingProgress.withSkus > 0));
+  const sortedFileProgress = [...fileProgress].sort((a, b) => {
+    const doneA = (a.ingredients_added >= (a.ingredients_total || 1)) && (a.ingredients_with_skus >= (a.sku_total || a.ingredients_total || 1));
+    const doneB = (b.ingredients_added >= (b.ingredients_total || 1)) && (b.ingredients_with_skus >= (b.sku_total || b.ingredients_total || 1));
+    if (doneA && !doneB) return 1;
+    if (!doneA && doneB) return -1;
+    const scoreA = ((a.ingredients_added || 0) / (a.ingredients_total || 1) + (a.ingredients_with_skus || 0) / (a.sku_total || a.ingredients_total || 1)) / 2;
+    const scoreB = ((b.ingredients_added || 0) / (b.ingredients_total || 1) + (b.ingredients_with_skus || 0) / (b.sku_total || b.ingredients_total || 1)) / 2;
+    return scoreA - scoreB;
+  });
+  const allDone = fileProgress.length > 0 && fileProgress.every(
+    (f) => (f.ingredients_added >= (f.ingredients_total || 1)) && (f.ingredients_with_skus >= (f.sku_total || f.ingredients_total || 1))
+  );
+  const showProgressBars = isUploading || (!allDone && fileProgress.length > 0);
+  const showExpandable = fileProgress.length > 2;
+  const visibleFiles = showExpandable && !progressExpanded ? sortedFileProgress.slice(0, 2) : sortedFileProgress;
 
   return (
-    <AuroraBackground className="min-h-screen">
-      <div className="relative z-10 mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-        {location.error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 rounded-xl border border-amber-500/50 bg-amber-950/30 px-4 py-3 text-amber-400 text-sm"
-          >
-            {location.error}
-            {location.postal_code && (
-              <span className="ml-2 text-amber-500/80">
-                (Using zip {location.postal_code})
-              </span>
-            )}
-          </motion.div>
-        )}
+    <AppBackground>
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+        {/* Location bar - compact */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 rounded-xl border border-border bg-card/80 backdrop-blur-sm px-4 py-3 flex flex-wrap items-center gap-4"
+        >
+          {location.error && (
+            <span className="text-accent text-sm">{location.error}</span>
+          )}
+          {!location.error && location.postal_code && (
+            <span className="text-sm text-muted-foreground">Location: {location.postal_code}</span>
+          )}
+          {!location.error && !location.postal_code && (
+            <span className="text-sm text-muted-foreground">Detecting location…</span>
+          )}
+          <label className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Postal code</span>
+            <input
+              type="text"
+              placeholder={location.postal_code || "e.g. 10001"}
+              value={manualPostalCode}
+              onChange={(e) => setManualPostalCode(e.target.value)}
+              className="rounded-lg border border-input bg-secondary px-3 py-1.5 text-sm text-foreground w-28 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </label>
+          {(manualPostalCode.trim() || location.postal_code) && (
+            <span className="text-muted-foreground text-sm">
+              Using for SKU pricing
+            </span>
+          )}
+        </motion.div>
 
-        <header className="mb-10 text-center">
+        {/* Hero */}
+        <header className="mb-12 text-center">
+          <motion.span
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="inline-block rounded-full px-4 py-1 text-lg text-muted-foreground mb-4"
+          >
+            Your Meal Planning Journey
+          </motion.span>
           <motion.h1
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl bg-clip-text text-transparent bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400"
+            transition={{ delay: 0.05 }}
+            className="font-display text-4xl font-bold tracking-tight sm:text-5xl text-gradient"
           >
             Tandem Recipe Planner
           </motion.h1>
@@ -200,9 +313,9 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="mt-2 text-zinc-400"
+            className="mt-3 text-muted-foreground text-lg max-w-xl mx-auto"
           >
-            Upload recipes, then generate a meal plan.
+            Upload recipes, optimize your shopping list, and generate meal plans.
           </motion.p>
         </header>
 
@@ -212,16 +325,16 @@ export default function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
-            className="rounded-2xl border border-zinc-700/50 bg-zinc-900/40 p-6 backdrop-blur-sm"
+            className="rounded-2xl border border-border bg-card p-6"
           >
-            <h2 className="text-lg font-semibold text-zinc-100 mb-4">Upload Recipes</h2>
+            <h2 className="font-display text-xl font-semibold text-foreground mb-4">Upload Recipes</h2>
             <div className="flex flex-col sm:flex-row gap-4 items-start">
               <label
                 className={cn(
                   "flex-1 w-full cursor-pointer rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors",
                   isDragging
-                    ? "border-violet-500 bg-violet-500/10 text-violet-300"
-                    : "border-zinc-600 text-zinc-400 hover:border-violet-500/50 hover:bg-zinc-800/30 hover:text-zinc-300"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50 hover:bg-secondary/30 hover:text-foreground"
                 )}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -268,9 +381,11 @@ export default function App() {
                 disabled={!files.length || isUploading}
                 className={cn(
                   "shrink-0 rounded-xl px-6 py-3 font-medium transition-all duration-200",
-                  files.length && !isUploading
-                    ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:from-violet-500 hover:to-fuchsia-500"
-                    : "bg-zinc-700 text-zinc-500 cursor-not-allowed"
+                  isUploading
+                    ? "bg-primary text-primary-foreground glow-primary animate-pulse-glow cursor-wait"
+                    : files.length
+                      ? "bg-primary text-primary-foreground hover:opacity-90 glow-primary"
+                      : "bg-secondary text-muted-foreground cursor-not-allowed"
                 )}
               >
                 {isUploading ? "Uploading…" : "Upload"}
@@ -278,23 +393,46 @@ export default function App() {
             </div>
 
             <AnimatePresence>
-              {(showProgressBars || isUploading) && (
+              {showProgressBars && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   className="mt-6 space-y-4 overflow-hidden"
                 >
-                  <ProgressBar
-                    value={ingredientsProgress.added}
-                    max={ingredientsProgress.total}
-                    label="Ingredients added"
-                  />
-                  <ProgressBar
-                    value={pricingProgress.withSkus}
-                    max={pricingProgress.total}
-                    label="Pricings initialized"
-                  />
+                  <div className="space-y-4">
+                    {visibleFiles.map((fp) => (
+                      <motion.div
+                        key={fp._id ?? `${fp.name}-${fp.ingredients_total ?? 0}`}
+                        layout
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        className="space-y-2 rounded-lg border border-border bg-secondary/30 p-3"
+                      >
+                        <div className="text-sm font-medium text-foreground truncate">
+                          {fp.name}
+                        </div>
+                        <ProgressBar
+                          value={fp.ingredients_added ?? 0}
+                          max={fp.ingredients_total || 1}
+                          label="Ingredients"
+                        />
+                        <ProgressBar
+                          value={fp.ingredients_with_skus ?? 0}
+                          max={fp.sku_total || fp.ingredients_total || 1}
+                          label="Pricing"
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                  {showExpandable && (
+                    <button
+                      type="button"
+                      onClick={() => setProgressExpanded((e) => !e)}
+                      className="text-sm text-primary hover:text-accent transition-colors mt-2"
+                    >
+                      {progressExpanded ? "Show less" : `See all (${fileProgress.length} files)`}
+                    </button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -305,45 +443,55 @@ export default function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.18 }}
-            className="rounded-2xl border border-zinc-700/50 bg-zinc-900/40 p-6 backdrop-blur-sm"
+            className="rounded-2xl border border-border bg-card p-6"
           >
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <h2 className="text-lg font-semibold text-zinc-100">Recipes</h2>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-zinc-500">Exclude:</span>
-                {allergens.slice(0, 8).map((a) => (
-                  <button
-                    key={a}
-                    onClick={() =>
-                      setExcludeAllergens((arr) =>
-                        arr.includes(a) ? arr.filter((x) => x !== a) : [...arr, a]
-                      )
-                    }
-                    className={cn(
-                      "rounded px-2 py-0.5 text-xs capitalize transition-colors",
-                      excludeAllergens.includes(a)
-                        ? "bg-amber-500/30 text-amber-300"
-                        : "bg-zinc-700 text-zinc-400 hover:bg-zinc-600"
-                    )}
-                  >
-                    {a.replace(/_/g, " ")}
-                  </button>
-                ))}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <h2 className="font-display text-xl font-semibold text-foreground">Recipes</h2>
+              <div className="flex flex-col sm:flex-row gap-3 flex-1 sm:justify-end">
+                <input
+                  type="search"
+                  placeholder="Search recipes…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="rounded-lg border border-input bg-secondary px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring sm:w-56"
+                />
                 <button
                   onClick={fetchRecipes}
-                  className="text-sm text-violet-400 hover:text-violet-300 transition-colors"
+                  className="text-sm text-primary hover:text-accent transition-colors self-start sm:self-center"
                 >
                   Refresh
                 </button>
               </div>
             </div>
+            {recipes.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-thin">
+                {mealTypes.map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setActiveMealFilter(type)}
+                    className={cn(
+                      "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                      activeMealFilter === type
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                    )}
+                  >
+                    {type === "all" ? "All" : type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
             {recipes.length === 0 ? (
-              <p className="text-zinc-500 py-8 text-center">
+              <p className="text-muted-foreground py-12 text-center">
                 No recipes yet. Upload recipe files to get started.
               </p>
+            ) : filteredRecipes.length === 0 ? (
+              <p className="text-muted-foreground py-12 text-center">
+                No recipes match your search or filter.
+              </p>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {recipes.map((rec, i) => (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredRecipes.map((rec, i) => (
                   <RecipeCard key={rec.id} recipe={rec} index={i} />
                 ))}
               </div>
@@ -355,23 +503,23 @@ export default function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="rounded-2xl border border-zinc-700/50 bg-zinc-900/40 p-6 backdrop-blur-sm"
+            className="rounded-2xl border border-border bg-card p-6"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-zinc-100">Ingredients & SKUs</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="font-display text-xl font-semibold text-foreground">Ingredients & SKUs</h2>
               <button
                 onClick={fetchIngredients}
-                className="text-sm text-violet-400 hover:text-violet-300 transition-colors"
+                className="text-sm text-primary hover:text-accent transition-colors"
               >
                 Refresh
               </button>
             </div>
             {ingredients.length === 0 ? (
-              <p className="text-zinc-500 py-8 text-center">
+              <p className="text-muted-foreground py-12 text-center">
                 No ingredients yet. Upload recipes to get started.
               </p>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {ingredients.map((ing, i) => (
                   <IngredientCard key={ing.id} ingredient={ing} index={i} />
                 ))}
@@ -384,15 +532,72 @@ export default function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.25 }}
-            className="rounded-2xl border border-zinc-700/50 bg-zinc-900/40 p-6 backdrop-blur-sm"
+            className="rounded-2xl border border-border bg-card p-6"
           >
-            <h2 className="text-lg font-semibold text-zinc-100 mb-4">Create Plan</h2>
+            <h2 className="font-display text-xl font-semibold text-foreground mb-6">Create Plan</h2>
             <div className="flex flex-col gap-4">
-              {/* Meal type config */}
-              <div className="flex flex-wrap gap-4 items-center">
-                <span className="text-sm text-zinc-400">Meal types (min each):</span>
+              <div className="flex flex-wrap gap-4 items-end">
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm text-muted-foreground">Target servings</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={targetServings}
+                    onChange={(e) => setTargetServings(e.target.value)}
+                    className="rounded-lg border border-input bg-secondary px-4 py-2.5 text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </label>
+                <button
+                  onClick={handlePlan}
+                  className="rounded-xl bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 glow-primary transition-opacity"
+                >
+                  Generate Plan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen((v) => !v)}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Filters
+                </button>
+              </div>
+
+              <AnimatePresence>
+                {filtersOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex flex-col gap-4 rounded-lg border border-border bg-secondary/30 p-4"
+                  >
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-sm text-muted-foreground">Exclude allergens:</span>
+                    {allergens.slice(0, 10).map((a) => (
+                      <button
+                        key={a}
+                        onClick={() =>
+                          setExcludeAllergens((arr) =>
+                            arr.includes(a) ? arr.filter((x) => x !== a) : [...arr, a]
+                          )
+                        }
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs capitalize transition-colors",
+                          excludeAllergens.includes(a)
+                            ? "bg-accent/30 text-accent"
+                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                        )}
+                      >
+                        {a.replace(/_/g, " ")}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-4 items-center">
+                    <span className="text-sm text-muted-foreground">Meal types (min each):</span>
                 {["appetizer", "entree", "dessert", "side"].map((type) => {
-                  const count = recipes.filter((r) => (r.meal_type || "entree") === type).length;
+                  const count = recipes.filter(
+                    (r) =>
+                      (r.meal_type || "entree") === type && !r.has_unavailable_ingredients
+                  ).length;
                   const disabled = count === 0;
                   return (
                     <label
@@ -402,7 +607,7 @@ export default function App() {
                         disabled && "opacity-50 cursor-not-allowed"
                       )}
                     >
-                      <span className="text-sm capitalize">{type}</span>
+                      <span className="text-sm capitalize text-foreground">{type}</span>
                       <input
                         type="number"
                         min="0"
@@ -411,86 +616,62 @@ export default function App() {
                           setMealConfig((m) => ({ ...m, [type]: parseInt(e.target.value, 10) || 0 }))
                         }
                         disabled={disabled}
-                        className="w-14 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-sm text-zinc-100"
+                        className="w-14 rounded-lg border border-input bg-secondary px-2 py-1 text-sm text-foreground"
                       />
                       {disabled && (
-                        <span className="text-xs text-zinc-500">(none)</span>
+                        <span className="text-xs text-muted-foreground">(none)</span>
                       )}
                     </label>
                   );
                 })}
-              </div>
+                  </div>
 
-              {/* Store filter */}
-              <div className="flex flex-col gap-2">
-                <span className="text-sm text-zinc-400">Stores only (e.g. costco, walmart):</span>
-                <div className="flex gap-2 flex-wrap">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm text-muted-foreground">Stores only:</span>
+                <div className="flex gap-2 flex-wrap items-center">
                   {storeSlugs.map((s) => (
                     <span
                       key={s}
-                      className="inline-flex items-center gap-1 rounded-full bg-zinc-700 px-3 py-1 text-sm text-zinc-200"
+                      className="inline-flex items-center gap-1 rounded-full bg-secondary px-3 py-1 text-sm text-secondary-foreground"
                     >
-                      {s}
+                      {stores.find((st) => st.slug === s)?.name || s.replace(/-/g, " ")}
                       <button
                         type="button"
                         onClick={() => setStoreSlugs((arr) => arr.filter((x) => x !== s))}
-                        className="text-zinc-400 hover:text-zinc-200"
+                        className="text-muted-foreground hover:text-foreground"
                       >
                         ×
                       </button>
                     </span>
                   ))}
-                  <input
-                    type="text"
-                    placeholder="Add store..."
-                    value={storeFilterInput}
-                    onChange={(e) => setStoreFilterInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const v = storeFilterInput.trim().toLowerCase().replace(/\s+/g, "-");
-                        if (v && !storeSlugs.includes(v)) {
-                          setStoreSlugs((arr) => [...arr, v]);
-                          setStoreFilterInput("");
-                        }
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const slug = e.target.value;
+                      if (slug && !storeSlugs.includes(slug)) {
+                        setStoreSlugs((arr) => [...arr, slug]);
                       }
+                      e.target.value = "";
                     }}
-                    className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 w-32"
-                  />
+                    className="rounded-lg border border-input bg-secondary px-3 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring min-w-[140px]"
+                  >
+                    <option value="">Add store…</option>
+                    {stores
+                      .filter((st) => st.slug && !storeSlugs.includes(st.slug))
+                      .map((st) => (
+                        <option key={st.slug} value={st.slug}>
+                          {st.name || st.slug}
+                        </option>
+                      ))}
+                  </select>
                 </div>
-              </div>
+                  </div>
 
-              <div className="flex flex-col sm:flex-row gap-4 items-start flex-wrap">
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm text-zinc-400">Target servings</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={targetServings}
-                    onChange={(e) => setTargetServings(e.target.value)}
-                    className="rounded-lg border border-zinc-600 bg-zinc-800 px-4 py-2.5 text-zinc-100 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                  />
-                </label>
-                <button
-                  onClick={() => setShowLpOptions((v) => !v)}
-                  className="text-sm text-violet-400 hover:text-violet-300 transition-colors self-end"
-                >
-                  {showLpOptions ? "Hide" : "Show"} LP options
-                </button>
-                <button
-                  onClick={handlePlan}
-                  className="rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-6 py-3 font-medium text-white transition-all hover:from-violet-500 hover:to-fuchsia-500"
-                >
-                  Generate Plan
-                </button>
-              </div>
-              {showLpOptions && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="flex gap-6 flex-wrap rounded-lg border border-zinc-600/50 bg-zinc-800/30 p-4"
-                >
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-muted-foreground">LP options:</span>
+                <div className="flex gap-6 flex-wrap">
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-zinc-500">Time limit (s)</span>
+                    <span className="text-xs text-muted-foreground">Time limit (s)</span>
                     <input
                       type="number"
                       min="1"
@@ -502,11 +683,11 @@ export default function App() {
                           timeLimitSeconds: parseInt(e.target.value, 10) || 10,
                         }))
                       }
-                      className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 w-24"
+                      className="rounded-lg border border-input bg-secondary px-3 py-1.5 text-sm text-foreground w-24"
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-zinc-500">Batch penalty</span>
+                    <span className="text-xs text-muted-foreground">Batch penalty</span>
                     <input
                       type="number"
                       min="0"
@@ -518,53 +699,56 @@ export default function App() {
                           batchPenalty: parseFloat(e.target.value) || 0.0001,
                         }))
                       }
-                      className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 w-28"
+                      className="rounded-lg border border-input bg-secondary px-3 py-1.5 text-sm text-foreground w-28"
                     />
                   </label>
+                </div>
+                  </div>
                 </motion.div>
-              )}
+                )}
+              </AnimatePresence>
             </div>
             {planResult && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-6 space-y-6 overflow-auto max-h-[70vh]"
+                className="mt-8 space-y-6 overflow-auto max-h-[70vh]"
               >
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span
                       className={cn(
-                        "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                        "rounded-full px-3 py-1 text-xs font-medium",
                         planResult.status === "Optimal"
-                          ? "bg-emerald-500/20 text-emerald-400"
+                          ? "bg-step-complete/20 text-step-complete"
                           : planResult.status === "Infeasible"
-                            ? "bg-red-500/20 text-red-400"
-                            : "bg-amber-500/20 text-amber-400"
+                            ? "bg-destructive/20 text-destructive"
+                            : "bg-primary/20 text-primary"
                       )}
                     >
                       {planResult.status}
                     </span>
-                    <span className="text-zinc-400 text-sm">
+                    <span className="text-muted-foreground text-sm">
                       Total: ${planResult.objective?.toFixed(2) ?? "—"}
                     </span>
                   </div>
                   {planResult.infeasible_reason && (
-                    <p className="text-sm text-amber-400">{planResult.infeasible_reason}</p>
+                    <p className="text-sm text-accent">{planResult.infeasible_reason}</p>
                   )}
                 </div>
 
                 {/* Chosen recipes */}
                 {planResult.recipe_details?.length > 0 && (
-                  <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-4">
-                    <h3 className="font-semibold text-zinc-100 mb-3">Chosen recipes</h3>
-                    <div className="space-y-2">
+                  <div className="rounded-xl border border-border bg-secondary/30 p-5">
+                    <h3 className="font-display font-semibold text-foreground mb-4">Chosen recipes</h3>
+                    <div className="space-y-3">
                       {planResult.recipe_details.map((r) => (
                         <div
                           key={r.recipe_id}
-                          className="flex justify-between items-center py-2 border-b border-zinc-800 last:border-0"
+                          className="flex justify-between items-center py-2 border-b border-border last:border-0"
                         >
-                          <span className="text-zinc-200 font-medium">{r.name}</span>
-                          <span className="text-zinc-500 text-sm">
+                          <span className="text-foreground font-medium">{r.name}</span>
+                          <span className="text-muted-foreground text-sm">
                             {r.batches} batch{r.batches !== 1 ? "es" : ""} × {r.servings_per_batch} = {r.total_servings} servings
                           </span>
                         </div>
@@ -575,13 +759,13 @@ export default function App() {
 
                 {/* Consolidated shopping list */}
                 {planResult.consolidated_shopping_list?.length > 0 && (
-                  <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-4">
-                    <h3 className="font-semibold text-zinc-100 mb-3">Consolidated shopping list</h3>
-                    <ul className="space-y-1.5">
+                  <div className="rounded-xl border border-border bg-secondary/30 p-5">
+                    <h3 className="font-display font-semibold text-foreground mb-4">Consolidated shopping list</h3>
+                    <ul className="space-y-2">
                       {planResult.consolidated_shopping_list.map((item, i) => (
                         <li key={i} className="flex gap-2 text-sm">
-                          <span className="text-zinc-400 capitalize">{item.ingredient}</span>
-                          <span className="text-zinc-300">
+                          <span className="text-muted-foreground capitalize">{item.ingredient}</span>
+                          <span className="text-foreground">
                             {item.quantity} {item.unit}
                           </span>
                         </li>
@@ -592,33 +776,44 @@ export default function App() {
 
                 {/* Generate Final Materials (post-plan) */}
                 {planResult.menu_card?.length > 0 && (
-                  <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-4">
-                    <h3 className="font-semibold text-zinc-100 mb-2">Final materials</h3>
-                    <p className="text-sm text-zinc-500 mb-3">
-                      Generate printable cards, descriptions, and PDF.
+                  <div className="rounded-xl border border-border bg-secondary/30 p-5">
+                    <h3 className="font-display font-semibold text-foreground mb-2">Final materials</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Generate printable cards, descriptions, and PDF. Descriptions and cards are
+                      generated only when you click below.
                     </p>
                     <button
-                      onClick={() => {
-                        // TODO: Open card editor, generate descriptions, PDF export
+                      onClick={async () => {
                         uiLogger.info("generate_materials.click");
+                        setMaterialsLoading(true);
+                        try {
+                          const res = await generateMaterials(planResult.menu_card);
+                          setMaterialsData(res.menu_card);
+                          setMaterialsEditorOpen(true);
+                        } catch (err) {
+                          setError(err?.message || "Failed to generate materials");
+                        } finally {
+                          setMaterialsLoading(false);
+                        }
                       }}
-                      className="rounded-lg bg-violet-600/80 px-4 py-2 text-sm text-white hover:bg-violet-500"
+                      disabled={materialsLoading}
+                      className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      Generate Final Materials
+                      {materialsLoading ? "Generating…" : "Generate Final Materials"}
                     </button>
                   </div>
                 )}
 
                 {/* Menu card */}
                 {planResult.menu_card?.length > 0 && (
-                  <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-4">
-                    <h3 className="font-semibold text-zinc-100 mb-3">Menu card</h3>
+                  <div className="rounded-xl border border-border bg-secondary/30 p-5">
+                    <h3 className="font-display font-semibold text-foreground mb-4">Menu card</h3>
                     <div className="space-y-4">
                       {planResult.menu_card.map((dish, i) => (
-                        <div key={i} className="border-l-2 border-violet-500/50 pl-4">
-                          <h4 className="font-medium text-zinc-100">{dish.name}</h4>
-                          <p className="text-sm text-zinc-400 mt-1">{dish.description}</p>
-                          <ul className="mt-2 text-sm text-zinc-500 space-y-0.5">
+                        <div key={i} className="border-l-2 border-primary/50 pl-4">
+                          <h4 className="font-semibold text-foreground">{dish.name}</h4>
+                          <p className="text-sm text-muted-foreground mt-1">{dish.description}</p>
+                          <ul className="mt-2 text-sm text-muted-foreground space-y-0.5">
                             {dish.ingredients?.map((ing, j) => (
                               <li key={j}>• {ing}</li>
                             ))}
@@ -631,30 +826,30 @@ export default function App() {
 
                 {/* SKU purchase details */}
                 {planResult.sku_details && Object.keys(planResult.sku_details).length > 0 && (
-                  <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-4">
-                    <h3 className="font-semibold text-zinc-100 mb-3">Items to purchase</h3>
-                    <div className="space-y-2 text-sm">
+                  <div className="rounded-xl border border-border bg-secondary/30 p-5">
+                    <h3 className="font-display font-semibold text-foreground mb-4">Items to purchase</h3>
+                    <div className="space-y-3 text-sm">
                       {Object.entries(planResult.sku_details).map(([id, detail]) => (
                         <div
                           key={id}
-                          className="flex justify-between gap-4 py-2 border-b border-zinc-800 last:border-0"
+                          className="flex justify-between gap-4 py-2 border-b border-border last:border-0"
                         >
                           <div>
-                            <span className="text-zinc-200">{detail.name}</span>
+                            <span className="text-foreground font-medium">{detail.name}</span>
                             {detail.brand && (
-                              <span className="text-zinc-500 ml-1">({detail.brand})</span>
+                              <span className="text-muted-foreground ml-1">({detail.brand})</span>
                             )}
                           </div>
                           <div className="text-right shrink-0">
-                            <span className="text-emerald-400">
+                            <span className="text-step-complete font-medium">
                               ${detail.price?.toFixed(2)}
                               {detail.size && (
-                                <span className="text-zinc-500 font-normal"> / {detail.size}</span>
+                                <span className="text-muted-foreground font-normal"> · {detail.size}</span>
                               )}
                               {" × "}{detail.quantity}
                             </span>
                             {detail.retailer && (
-                              <span className="text-zinc-500 block text-xs capitalize">
+                              <span className="text-muted-foreground block text-xs capitalize mt-0.5">
                                 {detail.retailer.replace(/-/g, " ")}
                               </span>
                             )}
@@ -673,12 +868,18 @@ export default function App() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-6 rounded-xl border border-red-500/50 bg-red-950/30 px-4 py-3 text-red-400"
+            className="mt-6 rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-destructive"
           >
             {error}
           </motion.div>
         )}
+
+        <MenuCardEditor
+          menuCard={materialsData}
+          open={materialsEditorOpen}
+          onClose={() => setMaterialsEditorOpen(false)}
+        />
       </div>
-    </AuroraBackground>
+    </AppBackground>
   );
 }

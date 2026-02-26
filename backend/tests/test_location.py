@@ -90,3 +90,22 @@ def test_location_extracts_forwarded_ip(client):
     assert response.status_code == 200
     data = response.json()
     assert data["postal_code"] == "94043"
+
+
+@respx.mock
+def test_location_cloudflare_cf_connecting_ip(client):
+    """When behind Cloudflare, CF-Connecting-IP has the real visitor IP."""
+    respx.get("http://ip-api.com/json/203.0.113.50").mock(
+        return_value=Response(200, json={
+            "status": "success",
+            "countryCode": "US",
+            "zip": "10001",
+        })
+    )
+    response = client.get(
+        "/api/location",
+        headers={"CF-Connecting-IP": "203.0.113.50"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["postal_code"] == "10001"

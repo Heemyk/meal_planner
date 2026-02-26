@@ -1,9 +1,18 @@
-"""SSE streaming for upload and SKU progress."""
+"""SSE streaming for upload and SKU progress.
+
+Clean architecture:
+- POST /recipes/upload: Accepts files, returns 202 + job_id immediately after reading body.
+  Spawns background task. Ingredient counts come from fast structural parse (no LLM).
+- GET /recipes/upload/stream/{job_id}: SSE stream. Yields events as they happen (per ingredient).
+"""
 
 import asyncio
 import io
 import json
+import queue
+import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from fastapi import APIRouter, UploadFile, File, Form
@@ -12,13 +21,16 @@ from fastapi.responses import StreamingResponse
 from app.logging import get_logger
 from app.services.graph.graph_queries import link_recipe_ingredient, upsert_ingredient, upsert_recipe
 from app.services.llm.dspy_client import configure_dspy
-from app.services.llm.ingredient_matcher import match_ingredient
-from app.services.llm.unit_normalizer import normalize_units
+from app.services.parsing.recipe_parser import count_ingredients_in_text, infer_meal_type, parse_recipe_text
 from app.services.allergens import infer_allergens_from_ingredients
-from app.services.parsing.recipe_parser import infer_meal_type, parse_recipe_text
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
-from app.storage.repositories import create_recipe, create_recipe_ingredients, get_ingredients, get_or_create_ingredient
+from app.storage.repositories import (
+    create_recipe,
+    create_recipe_ingredients,
+    get_ingredients,
+    get_or_create_ingredient,
+)
 from app.workers.tasks import fetch_skus_for_ingredient
 from sqlmodel import select
 
@@ -26,7 +38,52 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 SKU_POLL_INTERVAL = 1.5
-SKU_POLL_TIMEOUT = 300  # 5 min
+SKU_POLL_TIMEOUT = 300
+
+# job_id -> thread-safe queue of (event, data) for SSE consumers
+job_event_queues: dict[str, queue.Queue] = {}
+# job_id -> latest progress dict (for GET /progress)
+job_progress_store: dict[str, dict] = {}
+
+
+def _emit_sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _expand_files(content: bytes, filename: str) -> list[tuple[bytes, str]]:
+    if filename.lower().endswith(".zip"):
+        out = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                for name in zf.namelist():
+                    if name.endswith("/") or not name.lower().endswith(".txt"):
+                        continue
+                    out.append((zf.read(name), name.split("/")[-1] or name))
+            return out
+        except zipfile.BadZipFile:
+            logger.warning("progress: bad zip file %s", filename)
+            return []
+    return [(content, filename)]
+
+
+def _get_sku_progress() -> dict:
+    with get_session() as session:
+        ingredients = list(session.exec(select(Ingredient)))
+        skus = list(session.exec(select(SKU)))
+        now = datetime.utcnow()
+        ids_with_skus = {s.ingredient_id for s in skus if s.expires_at > now}
+        with_skus = sum(1 for i in ingredients if i.id in ids_with_skus)
+    return {
+        "ingredients_total": len(ingredients),
+        "ingredients_with_skus": with_skus,
+    }
+
+
+def _get_ingredient_ids_with_skus() -> set:
+    with get_session() as session:
+        skus = list(session.exec(select(SKU)))
+        now = datetime.utcnow()
+        return {s.ingredient_id for s in skus if s.expires_at > now}
 
 
 def _match_and_normalize(ingredient_text: str, existing_names: list[str]):
@@ -37,60 +94,187 @@ def _match_and_normalize(ingredient_text: str, existing_names: list[str]):
     return match, normalized
 
 
-def _get_sku_progress() -> dict:
+def _run_processing(
+    job_id: str,
+    file_contents: list[tuple[bytes, str]],
+    ingredient_totals: dict[str, int],
+    effective_postal: str,
+    event_queue: queue.Queue,
+):
+    """Sync processing loop. Puts (event, data) on queue after each significant step."""
+    from app.config import settings
+
+    configure_dspy()
+    files_progress = [
+        {
+            "name": name,
+            "ingredients_added": 0,
+            "ingredients_total": ingredient_totals.get(name, 1),
+            "ingredients_with_skus": 0,
+            "sku_total": 0,
+            "ingredient_ids": [],
+        }
+        for _, name in file_contents
+    ]
+
+    def _put(event: str, data: dict):
+        event_queue.put_nowait((event, data))
+        snap = [{"name": f["name"], "ingredients_added": f["ingredients_added"], "ingredients_total": f["ingredients_total"], "ingredients_with_skus": f["ingredients_with_skus"], "sku_total": len(set(f.get("ingredient_ids") or []))} for f in files_progress]
+        job_progress_store[job_id] = {"files": snap, "complete": event == "stream_complete"}
+
+    _put("upload_started", {"files": [{"name": f["name"], "ingredients_added": 0, "ingredients_total": f["ingredients_total"], "ingredients_with_skus": 0, "sku_total": 0} for f in files_progress]})
+
+    recipes_created = 0
+    ingredients_created = 0
+    sku_jobs = 0
+
     with get_session() as session:
-        ingredients = list(session.exec(select(Ingredient)))
-        skus = list(session.exec(select(SKU)))
-        now = datetime.utcnow()
-        ingredient_ids_with_skus = {s.ingredient_id for s in skus if s.expires_at > now}
-        with_skus_count = sum(1 for i in ingredients if i.id in ingredient_ids_with_skus)
-    return {
-        "ingredients_total": len(ingredients),
-        "ingredients_with_skus": with_skus_count,
-        "skus_total": len([s for s in skus if s.expires_at > now]),
-    }
+        existing = get_ingredients(session)
+        existing_names = [ing.canonical_name for ing in existing]
+        existing_lookup = {ing.canonical_name: ing for ing in existing}
 
+        for file_idx, (content, source_filename) in enumerate(file_contents):
+            parsed_recipes = parse_recipe_text(content.decode("utf-8"))
 
-def _emit_sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+            for parsed in parsed_recipes:
+                meal_type = infer_meal_type(parsed.name, parsed.instructions)
+                recipe = create_recipe(
+                    session,
+                    Recipe(
+                        name=parsed.name,
+                        servings=parsed.servings,
+                        instructions=parsed.instructions,
+                        source_file=source_filename,
+                        meal_type=meal_type,
+                    ),
+                )
+                recipes_created += 1
+                upsert_recipe(recipe_id=recipe.id, name=recipe.name, servings=recipe.servings)
 
+                recipe_ingredients = []
+                recipe_ingredient_names = []
+                current_existing = list(existing_names)
+                max_workers = min(settings.ingredient_batch_max_workers, max(1, len(parsed.ingredients)))
 
-def _expand_files(content: bytes, filename: str) -> list[tuple[bytes, str]]:
-    """Expand upload into list of (content, filename). Extracts .zip files."""
-    if filename.lower().endswith(".zip"):
-        out = []
-        try:
-            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
-                for name in zf.namelist():
-                    if name.endswith("/") or not name.lower().endswith(".txt"):
+                results = {}
+                with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                    futures = {ex.submit(_match_and_normalize, it, current_existing): it for it in parsed.ingredients}
+                    for fut in as_completed(futures):
+                        it = futures[fut]
+                        try:
+                            results[it] = fut.result()
+                        except Exception as e:
+                            logger.warning("ingredient.parse_failed text=%s error=%s", it, e)
+
+                for ingredient_text in parsed.ingredients:
+                    if ingredient_text not in results:
                         continue
-                    data = zf.read(name)
-                    base = name.split("/")[-1]
-                    out.append((data, base or name))
-            return out
-        except zipfile.BadZipFile:
-            logger.warning("progress: bad zip file, skipping: %s", filename)
-            return []
-    return [(content, filename)]
+                    match, normalized = results[ingredient_text]
+                    canonical_name = (match.get("canonical_name") or "").strip().lower() or "unknown"
+                    ingredient = existing_lookup.get(canonical_name)
+                    if not ingredient:
+                        ingredient = get_or_create_ingredient(
+                            session,
+                            name=canonical_name,
+                            canonical_name=canonical_name,
+                            base_unit=normalized["base_unit"],
+                            base_unit_qty=normalized["base_unit_qty"],
+                        )
+                        existing_lookup[canonical_name] = ingredient
+                        existing_names.append(canonical_name)
+                        ingredients_created += 1
+                        fetch_skus_for_ingredient.delay(ingredient.id, canonical_name, effective_postal)
+                        sku_jobs += 1
+                        files_progress[file_idx]["ingredients_added"] += 1
+                    files_progress[file_idx]["ingredient_ids"].append(ingredient.id)
+
+                    _put("ingredient_added", {
+                        "ingredients_added": ingredients_created,
+                        "name": canonical_name,
+                        "files": [{"name": f["name"], "ingredients_added": f["ingredients_added"], "ingredients_total": f["ingredients_total"], "ingredients_with_skus": f["ingredients_with_skus"], "sku_total": len(set(f.get("ingredient_ids") or []))} for f in files_progress],
+                    })
+
+                    recipe_ingredients.append(
+                        RecipeIngredient(
+                            recipe_id=recipe.id,
+                            ingredient_id=ingredient.id,
+                            quantity=normalized["normalized_qty"],
+                            unit=normalized["normalized_unit"],
+                            original_text=ingredient_text,
+                        )
+                    )
+                    recipe_ingredient_names.append(canonical_name)
+                    upsert_ingredient(ingredient_id=ingredient.id, name=ingredient.canonical_name)
+                    link_recipe_ingredient(
+                        recipe_id=recipe.id,
+                        ingredient_id=ingredient.id,
+                        qty=normalized["normalized_qty"],
+                    )
+
+                create_recipe_ingredients(session, recipe_ingredients)
+                recipe.allergens = infer_allergens_from_ingredients(recipe_ingredient_names)
+                session.add(recipe)
+                session.commit()
+
+    for f in files_progress:
+        f["sku_total"] = len(set(f.get("ingredient_ids") or []))
+
+    _put("upload_complete", {
+        "recipes_created": recipes_created,
+        "ingredients_created": ingredients_created,
+        "sku_jobs_enqueued": sku_jobs,
+        "files": [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "sku_total": fp["sku_total"]} for fp in files_progress],
+    })
+
+    elapsed = 0
+    last_progress = {}
+    while elapsed < SKU_POLL_TIMEOUT:
+        import time
+        time.sleep(SKU_POLL_INTERVAL)
+        elapsed += SKU_POLL_INTERVAL
+        prog = _get_sku_progress()
+        ids_with_skus = _get_ingredient_ids_with_skus()
+        for f in files_progress:
+            ing_ids = set(f.get("ingredient_ids") or [])
+            f["ingredients_with_skus"] = sum(1 for iid in ing_ids if iid in ids_with_skus)
+        snap = [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "sku_total": fp.get("sku_total", 0)} for fp in files_progress]
+        job_progress_store[job_id] = {"files": snap, "complete": False}
+        if prog != last_progress or elapsed == SKU_POLL_INTERVAL:
+            last_progress = prog.copy()
+            _put("sku_progress", {**prog, "files": snap})
+        if prog["ingredients_total"] == 0:
+            break
+        if prog["ingredients_with_skus"] >= prog["ingredients_total"]:
+            break
+
+    final_snap = [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "sku_total": fp.get("sku_total", 0)} for fp in files_progress]
+    _put("stream_complete", {})
+    job_progress_store[job_id] = {"files": final_snap, "complete": True}
+    try:
+        del job_event_queues[job_id]
+    except KeyError:
+        pass
 
 
-@router.post("/recipes/upload/stream")
-async def upload_recipes_stream(
+@router.get("/progress/{job_id}")
+def get_progress(job_id: str) -> dict:
+    return job_progress_store.get(job_id, {"files": [], "complete": False})
+
+
+@router.post("/recipes/upload")
+async def upload_recipes(
     files: list[UploadFile] = File(...),
     postal_code: str | None = Form(default=None),
 ):
     """
-    Upload recipes and stream progress via SSE.
-    Events: ingredient_added, upload_complete, sku_progress, stream_complete
-    postal_code: Optional. Used for Instacart price lookup. If omitted, uses server default.
+    Upload recipes. Returns 202 immediately with job_id and files (real ingredient counts from structural parse).
+    Processing runs in background. Connect to GET /recipes/upload/stream/{job_id} for SSE events.
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
     from app.config import settings
 
     effective_postal = (postal_code or "").strip() or settings.default_postal_code
+    job_id = str(uuid.uuid4())
 
-    # Read files in request scope so UploadFiles stay valid. Expand .zip into .txt entries.
     file_contents = []
     for upload in files:
         content = await upload.read()
@@ -98,143 +282,69 @@ async def upload_recipes_stream(
         for c, name in _expand_files(content, fn):
             file_contents.append((c, name))
 
+    # Fast structural parse only (no LLM) to get real ingredient counts
+    ingredient_totals = {}
+    for content, name in file_contents:
+        try:
+            ingredient_totals[name] = count_ingredients_in_text(content.decode("utf-8"))
+        except Exception:
+            ingredient_totals[name] = 1
+
+    files_progress = [
+        {"name": name, "ingredients_added": 0, "ingredients_total": ingredient_totals.get(name, 1), "ingredients_with_skus": 0, "sku_total": 0}
+        for _, name in file_contents
+    ]
+    job_progress_store[job_id] = {"files": files_progress, "complete": False}
+    event_queue = queue.Queue()
+    job_event_queues[job_id] = event_queue
+
+    asyncio.get_event_loop().run_in_executor(
+        None,
+        _run_processing,
+        job_id,
+        file_contents,
+        ingredient_totals,
+        effective_postal,
+        event_queue,
+    )
+
+    return {"job_id": job_id, "files": files_progress}
+
+
+@router.get("/recipes/upload/stream/{job_id}")
+async def stream_upload_progress(job_id: str):
+    """
+    SSE stream for upload progress. Yields events as they happen (per ingredient).
+    Connect after receiving job_id from POST /recipes/upload.
+    """
+    ev_queue = job_event_queues.get(job_id)
+    if not ev_queue:
+        progress = job_progress_store.get(job_id)
+        if progress and progress.get("complete"):
+            async def finished():
+                yield _emit_sse("stream_complete", {})
+            return StreamingResponse(
+                finished(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+            )
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Job not found or expired"}, status_code=404)
+
     async def generate():
-        # Process inside generator so we can yield as we go
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        configure_dspy()
-        recipes_created = 0
-        ingredients_created = 0
-        sku_jobs = 0
-
-        with get_session() as session:
-            existing = get_ingredients(session)
-            existing_names = [ing.canonical_name for ing in existing]
-            existing_lookup = {ing.canonical_name: ing for ing in existing}
-
-            for content, source_filename in file_contents:
-                parsed_recipes = parse_recipe_text(content.decode("utf-8"))
-
-                for parsed in parsed_recipes:
-                    meal_type = infer_meal_type(parsed.name, parsed.instructions)
-                    recipe = create_recipe(
-                        session,
-                        Recipe(
-                            name=parsed.name,
-                            servings=parsed.servings,
-                            instructions=parsed.instructions,
-                            source_file=source_filename,
-                            meal_type=meal_type,
-                        ),
-                    )
-                    recipes_created += 1
-                    upsert_recipe(recipe_id=recipe.id, name=recipe.name, servings=recipe.servings)
-
-                    recipe_ingredients = []
-                    recipe_ingredient_names = []
-                    current_existing = list(existing_names)
-                    # ThreadPoolExecutor: threads (true parallelism for I/O-bound LLM calls), not asyncio
-                    max_workers = min(
-                        settings.ingredient_batch_max_workers,
-                        max(1, len(parsed.ingredients)),
-                    )
-                    logger.info(
-                        "ingredient.batch.start recipe=%s workers=%s count=%s",
-                        parsed.name,
-                        max_workers,
-                        len(parsed.ingredients),
-                    )
-                    results = {}
-                    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                        futures = {
-                            ex.submit(_match_and_normalize, it, current_existing): it
-                            for it in parsed.ingredients
-                        }
-                        for fut in as_completed(futures):
-                            it = futures[fut]
-                            try:
-                                results[it] = fut.result()
-                            except Exception as e:
-                                logger.warning("ingredient.parse_failed text=%s error=%s", it, e)
-
-                    for ingredient_text in parsed.ingredients:
-                        if ingredient_text not in results:
-                            continue
-                        match, normalized = results[ingredient_text]
-                        canonical_name = (match["canonical_name"] or "").strip().lower() or "unknown"
-                        ingredient = existing_lookup.get(canonical_name)
-                        if not ingredient:
-                            ingredient = get_or_create_ingredient(
-                                session,
-                                name=canonical_name,
-                                canonical_name=canonical_name,
-                                base_unit=normalized["base_unit"],
-                                base_unit_qty=normalized["base_unit_qty"],
-                            )
-                            existing_lookup[canonical_name] = ingredient
-                            existing_names.append(canonical_name)
-                            ingredients_created += 1
-                            fetch_skus_for_ingredient.delay(
-                                ingredient.id, canonical_name, effective_postal
-                            )
-                            sku_jobs += 1
-                            # Yield immediately so client sees progress
-                            yield _emit_sse("ingredient_added", {
-                                "ingredients_added": ingredients_created,
-                                "ingredients_total": ingredients_created,
-                                "name": canonical_name,
-                            })
-
-                        recipe_ingredients.append(
-                            RecipeIngredient(
-                                recipe_id=recipe.id,
-                                ingredient_id=ingredient.id,
-                                quantity=normalized["normalized_qty"],
-                                unit=normalized["normalized_unit"],
-                                original_text=ingredient_text,
-                            )
-                        )
-                        recipe_ingredient_names.append(canonical_name)
-                        upsert_ingredient(ingredient_id=ingredient.id, name=ingredient.canonical_name)
-                        link_recipe_ingredient(
-                            recipe_id=recipe.id,
-                            ingredient_id=ingredient.id,
-                            qty=normalized["normalized_qty"],
-                        )
-
-                    create_recipe_ingredients(session, recipe_ingredients)
-
-                    # Set allergens from ingredients (meal initialisation)
-                    recipe.allergens = infer_allergens_from_ingredients(recipe_ingredient_names)
-                    session.add(recipe)
-                    session.commit()
-
-        yield _emit_sse("upload_complete", {
-            "recipes_created": recipes_created,
-            "ingredients_created": ingredients_created,
-            "sku_jobs_enqueued": sku_jobs,
-        })
-        elapsed = 0
-        last_progress = {}
-        while elapsed < SKU_POLL_TIMEOUT:
-            await asyncio.sleep(SKU_POLL_INTERVAL)
-            elapsed += SKU_POLL_INTERVAL
-            prog = _get_sku_progress()
-            if prog != last_progress:
-                last_progress = prog
-                yield _emit_sse("sku_progress", prog)
-            if prog["ingredients_total"] == 0:
+        poll_interval = 0.05
+        while True:
+            try:
+                event, data = ev_queue.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(poll_interval)
+                continue
+            yield _emit_sse(event, data)
+            if event == "stream_complete":
                 break
-            if prog["ingredients_with_skus"] >= prog["ingredients_total"]:
-                break
-        yield _emit_sse("stream_complete", {})
 
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )

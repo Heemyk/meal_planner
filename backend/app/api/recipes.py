@@ -85,87 +85,87 @@ async def upload_recipes(
                                 meal_type=meal_type,
                             ),
                         )
-                    recipes_created += 1
-                    upsert_recipe(recipe_id=recipe.id, name=recipe.name, servings=recipe.servings)
+                        recipes_created += 1
+                        upsert_recipe(recipe_id=recipe.id, name=recipe.name, servings=recipe.servings)
 
-                    recipe_ingredients: list[RecipeIngredient] = []
-                    recipe_ingredient_names: list[str] = []
-                    current_existing = list(existing_names)
-                    # ThreadPoolExecutor: threads (true parallelism for I/O-bound LLM calls), not asyncio
-                    max_workers = min(
-                        settings.ingredient_batch_max_workers,
-                        max(1, len(parsed.ingredients)),
-                    )
-                    logger.info(
-                        "ingredient.batch.start recipe=%s workers=%s count=%s",
-                        parsed.name,
-                        max_workers,
-                        len(parsed.ingredients),
-                    )
-                    results: dict[str, Tuple[dict, dict]] = {}
-                    with time_span("ingredient.batch.parallel", recipe=parsed.name, workers=max_workers, count=len(parsed.ingredients)):
-                        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                            futures = {
-                                ex.submit(_match_and_normalize, it, current_existing): it
-                                for it in parsed.ingredients
-                            }
-                            for fut in as_completed(futures):
-                                it = futures[fut]
-                                try:
-                                    results[it] = fut.result()
-                                except Exception as e:
-                                    logger.warning("ingredient.parse_failed text=%s error=%s", it, e)
-                    for ingredient_text in parsed.ingredients:
-                        if ingredient_text not in results:
-                            continue
-                        match, normalized = results[ingredient_text]
-                        canonical_name = match["canonical_name"].strip().lower()
-                        if not canonical_name:
-                            canonical_name = "unknown"
-                        ingredient = existing_lookup.get(canonical_name)
-                        if not ingredient:
-                            ingredient = get_or_create_ingredient(
-                                session,
-                                name=canonical_name,
-                                canonical_name=canonical_name,
-                                base_unit=normalized["base_unit"],
-                                base_unit_qty=normalized["base_unit_qty"],
-                            )
-                            existing_lookup[canonical_name] = ingredient
-                            existing_names.append(canonical_name)
-                            ingredients_created += 1
-                            logger.info(
-                                "ingredient.created id=%s name=%s base_unit=%s",
-                                ingredient.id,
-                                ingredient.canonical_name,
-                                ingredient.base_unit,
-                            )
-                            fetch_skus_for_ingredient.delay(
-                                ingredient.id, canonical_name, effective_postal
-                            )
-                            sku_jobs += 1
-
-                        recipe_ingredients.append(
-                            RecipeIngredient(
-                                recipe_id=recipe.id,
-                                ingredient_id=ingredient.id,
-                                quantity=normalized["normalized_qty"],
-                                unit=normalized["normalized_unit"],
-                                original_text=ingredient_text,
-                            )
+                        recipe_ingredients: list[RecipeIngredient] = []
+                        recipe_ingredient_names: list[str] = []
+                        current_existing = list(existing_names)
+                        # ThreadPoolExecutor: threads (true parallelism for I/O-bound LLM calls), not asyncio
+                        max_workers = min(
+                            settings.ingredient_batch_max_workers,
+                            max(1, len(parsed.ingredients)),
                         )
-                        recipe_ingredient_names.append(canonical_name)
-                        upsert_ingredient(ingredient_id=ingredient.id, name=ingredient.canonical_name)
-                        link_recipe_ingredient(
-                            recipe_id=recipe.id, ingredient_id=ingredient.id, qty=normalized["normalized_qty"]
+                        logger.info(
+                            "ingredient.batch.start recipe=%s workers=%s count=%s",
+                            parsed.name,
+                            max_workers,
+                            len(parsed.ingredients),
                         )
+                        results: dict[str, Tuple[dict, dict]] = {}
+                        with time_span("ingredient.batch.parallel", recipe=parsed.name, workers=max_workers, count=len(parsed.ingredients)):
+                            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                                futures = {
+                                    ex.submit(_match_and_normalize, it, current_existing): it
+                                    for it in parsed.ingredients
+                                }
+                                for fut in as_completed(futures):
+                                    it = futures[fut]
+                                    try:
+                                        results[it] = fut.result()
+                                    except Exception as e:
+                                        logger.warning("ingredient.parse_failed text=%s error=%s", it, e)
+                        for ingredient_text in parsed.ingredients:
+                            if ingredient_text not in results:
+                                continue
+                            match, normalized = results[ingredient_text]
+                            canonical_name = match["canonical_name"].strip().lower()
+                            if not canonical_name:
+                                canonical_name = "unknown"
+                            ingredient = existing_lookup.get(canonical_name)
+                            if not ingredient:
+                                ingredient = get_or_create_ingredient(
+                                    session,
+                                    name=canonical_name,
+                                    canonical_name=canonical_name,
+                                    base_unit=normalized["base_unit"],
+                                    base_unit_qty=normalized["base_unit_qty"],
+                                )
+                                existing_lookup[canonical_name] = ingredient
+                                existing_names.append(canonical_name)
+                                ingredients_created += 1
+                                logger.info(
+                                    "ingredient.created id=%s name=%s base_unit=%s",
+                                    ingredient.id,
+                                    ingredient.canonical_name,
+                                    ingredient.base_unit,
+                                )
+                                fetch_skus_for_ingredient.delay(
+                                    ingredient.id, canonical_name, effective_postal
+                                )
+                                sku_jobs += 1
 
-                    create_recipe_ingredients(session, recipe_ingredients)
+                            recipe_ingredients.append(
+                                RecipeIngredient(
+                                    recipe_id=recipe.id,
+                                    ingredient_id=ingredient.id,
+                                    quantity=normalized["normalized_qty"],
+                                    unit=normalized["normalized_unit"],
+                                    original_text=ingredient_text,
+                                )
+                            )
+                            recipe_ingredient_names.append(canonical_name)
+                            upsert_ingredient(ingredient_id=ingredient.id, name=ingredient.canonical_name)
+                            link_recipe_ingredient(
+                                recipe_id=recipe.id, ingredient_id=ingredient.id, qty=normalized["normalized_qty"]
+                            )
 
-                    # Set allergens from ingredients (meal initialisation)
-                    recipe.allergens = infer_allergens_from_ingredients(recipe_ingredient_names)
-                    session.add(recipe)
-                    session.commit()
+                        create_recipe_ingredients(session, recipe_ingredients)
+
+                        # Set allergens from ingredients (meal initialisation)
+                        recipe.allergens = infer_allergens_from_ingredients(recipe_ingredient_names)
+                        session.add(recipe)
+                        session.commit()
 
             total_recipes = len(list(session.exec(select(Recipe))))
             total_ingredients = len(list(session.exec(select(Ingredient))))

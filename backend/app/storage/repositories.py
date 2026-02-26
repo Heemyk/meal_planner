@@ -35,6 +35,15 @@ def get_ingredient_by_id(session: Session, ingredient_id: int) -> Ingredient | N
     return session.exec(select(Ingredient).where(Ingredient.id == ingredient_id)).first()
 
 
+def set_ingredient_sku_unavailable(session: Session, ingredient_id: int, unavailable: bool) -> None:
+    """Mark ingredient as having no SKUs (unavailable=True) or clear the flag (unavailable=False)."""
+    ingredient = get_ingredient_by_id(session, ingredient_id)
+    if ingredient:
+        ingredient.sku_unavailable = unavailable
+        session.add(ingredient)
+        session.commit()
+
+
 def get_or_create_ingredient(
     session: Session, name: str, canonical_name: str, base_unit: str, base_unit_qty: float
 ) -> Ingredient:
@@ -70,6 +79,8 @@ def upsert_skus(
             size=sku.get("size"),
             price=sku.get("price"),
             price_per_unit=sku.get("price_per_unit"),
+            quantity_in_base_unit=sku.get("quantity_in_base_unit"),
+            size_display=sku.get("size_display"),
             retailer_slug=slug,
             postal_code=postal_code,
             expires_at=expires_at,

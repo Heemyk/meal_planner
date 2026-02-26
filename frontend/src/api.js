@@ -20,15 +20,38 @@ export async function uploadRecipes(files) {
 }
 
 /**
+ * Get progress for an upload job (for polling).
+ * Returns { files: [{ name, ingredients_added, ingredients_total, ingredients_with_skus, sku_total }], complete }
+ */
+export async function getProgress(jobId) {
+  const res = await fetch(`${API_URL}/progress/${jobId}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/**
+ * Create progress entry before upload so polling shows bars immediately.
+ * Call this right before uploadRecipesStream.
+ */
+export async function uploadStart(jobId, fileCount = 1) {
+  const res = await fetch(`${API_URL}/upload/start?job_id=${encodeURIComponent(jobId)}&file_count=${fileCount}`, {
+    method: "POST",
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/**
  * Upload recipes and consume SSE progress stream.
  * onProgress: (event, data) => void
- * Events: ingredient_added, upload_complete, sku_progress, stream_complete
+ * Events: upload_started, ingredient_added, upload_complete, sku_progress, stream_complete
  */
-export async function uploadRecipesStream(files, onProgress, postalCode) {
-  apiLogger.info("upload.stream.start", { count: files.length, postalCode });
+export async function uploadRecipesStream(files, onProgress, postalCode, jobId) {
+  apiLogger.info("upload.stream.start", { count: files.length, postalCode, jobId });
   const formData = new FormData();
   Array.from(files).forEach((file) => formData.append("files", file));
   if (postalCode) formData.append("postal_code", postalCode);
+  if (jobId) formData.append("job_id", jobId);
   const response = await fetch(`${API_URL}/recipes/upload/stream`, {
     method: "POST",
     body: formData,
@@ -106,6 +129,40 @@ export async function getIngredientsWithSkus() {
   if (!response.ok) {
     apiLogger.error("ingredients.error", { status: response.status });
     throw new Error("Failed to fetch ingredients");
+  }
+  return response.json();
+}
+
+/**
+ * Generate final materials (descriptions, card metadata) for menu_card.
+ * Returns enriched menu_card with generated_description, theme.
+ */
+export async function generateMaterials(menuCard) {
+  apiLogger.info("materials.generate", { count: menuCard?.length });
+  const response = await fetch(`${API_URL}/generate-materials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ menu_card: menuCard }),
+  });
+  if (!response.ok) {
+    apiLogger.error("materials.error", { status: response.status });
+    throw new Error("Generate materials failed");
+  }
+  apiLogger.info("materials.success");
+  return response.json();
+}
+
+/**
+ * Get available stores for store filter dropdown.
+ */
+export async function getStores(postalCode) {
+  apiLogger.info("stores.fetch", { postalCode });
+  const url = new URL(`${API_URL}/stores`);
+  if (postalCode) url.searchParams.set("postal_code", postalCode);
+  const response = await fetch(url);
+  if (!response.ok) {
+    apiLogger.error("stores.error", { status: response.status });
+    return { stores: [] };
   }
   return response.json();
 }

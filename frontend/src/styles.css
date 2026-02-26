@@ -1,26 +1,105 @@
 @import "tailwindcss";
 
-body {
-  font-family: "DM Sans", system-ui, sans-serif;
+/* Design system tokens (example_ui) */
+@theme {
+  /* Semantic colors - warm amber/gold culinary theme */
+  --color-background: hsl(20 14% 6%);
+  --color-foreground: hsl(40 30% 92%);
+  --color-card: hsl(20 10% 10%);
+  --color-card-foreground: hsl(40 30% 92%);
+  --color-primary: hsl(36 90% 55%);
+  --color-primary-foreground: hsl(20 14% 6%);
+  --color-secondary: hsl(20 8% 16%);
+  --color-secondary-foreground: hsl(40 20% 80%);
+  --color-muted: hsl(20 6% 14%);
+  --color-muted-foreground: hsl(30 10% 50%);
+  --color-accent: hsl(24 80% 50%);
+  --color-accent-foreground: hsl(40 30% 95%);
+  --color-destructive: hsl(0 72% 51%);
+  --color-border: hsl(20 8% 18%);
+  --color-input: hsl(20 8% 18%);
+  --color-ring: hsl(36 90% 55%);
+  /* Custom tokens */
+  --color-glow-primary: hsl(36 90% 55%);
+  --color-glow-accent: hsl(24 80% 50%);
+  --color-surface-elevated: hsl(20 10% 12%);
+  --color-timeline-line: hsl(36 40% 25%);
+  --color-timeline-dot: hsl(36 90% 55%);
+  --color-step-complete: hsl(142 72% 40%);
+  --color-step-active: hsl(36 90% 55%);
+  --color-step-pending: hsl(20 6% 25%);
+  --radius: 0.75rem;
+  --font-display: "Playfair Display", serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
 }
 
-/* Custom animations */
+/* Base typography */
+body {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+}
+
+/* Utilities */
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .glow-primary {
+    box-shadow: 0 0 40px -10px hsl(36 90% 55% / 0.4);
+  }
+  .glow-accent {
+    box-shadow: 0 0 30px -8px hsl(24 80% 50% / 0.3);
+  }
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(36 90% 55%), hsl(24 80% 50%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(hsl(20 8% 18% / 0.3) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(20 8% 18% / 0.3) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px -5px hsl(36 90% 55% / 0.3); }
+  50% { box-shadow: 0 0 40px -5px hsl(36 90% 55% / 0.5); }
+}
+
 @keyframes aurora {
-  from {
-    background-position: 50% 50%, 50% 50%;
-  }
-  to {
-    background-position: 350% 50%, 350% 50%;
-  }
+  from { background-position: 50% 50%, 50% 50%; }
+  to { background-position: 350% 50%, 350% 50%; }
 }
 
 @keyframes shimmer {
-  from {
-    background-position: -200% 0;
-  }
-  to {
-    background-position: 200% 0;
-  }
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
 }
 
 .animate-aurora {
@@ -29,4 +108,8 @@ body {
 
 .animate-shimmer {
   animation: shimmer 2s linear infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
 }

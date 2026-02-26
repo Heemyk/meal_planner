@@ -35,6 +35,28 @@ def _parse_title(line: str) -> tuple[str, int]:
     return line.strip(), 1
 
 
+def count_ingredients_in_text(text: str) -> int:
+    """
+    Count ingredient lines without LLM or full parsing.
+    Uses structure only: split on ---, find Ingredients section, count lines starting with -.
+    """
+    sections = [s.strip() for s in text.split("---") if s.strip()]
+    total = 0
+    for section in sections:
+        lines = [line.rstrip() for line in section.splitlines() if line.strip()]
+        mode = None
+        for line in lines[1:]:  # skip title
+            if line.lower().startswith("ingredients"):
+                mode = "ingredients"
+                continue
+            if line.lower().startswith("instructions"):
+                mode = "instructions"
+                continue
+            if mode == "ingredients" and line.startswith("-"):
+                total += 1
+    return max(1, total)
+
+
 def parse_recipe_text(text: str) -> List[ParsedRecipe]:
     sections = [s.strip() for s in text.split("---") if s.strip()]
     recipes: List[ParsedRecipe] = []

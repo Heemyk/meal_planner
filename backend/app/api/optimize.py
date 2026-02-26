@@ -11,6 +11,7 @@ from app.services.optimization.ilp_solver import ILPSolverOptions, IngredientOpt
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
 from app.services.allergens import get_all_allergen_codes
+from app.services.llm.sku_size_converter import convert_sku_size
 from app.storage.repositories import create_menu_plan
 
 router = APIRouter()
@@ -22,6 +23,22 @@ def list_allergens():
     """Return allergen codes for filter UI."""
     return {"allergens": get_all_allergen_codes()}
 
+
+@router.get("/stores")
+def list_stores(postal_code: str | None = None):
+    """Return available stores for store filter dropdown. Uses postal for Instacart availability."""
+    from app.services.sku.instacart_client import instacart_client
+    from app.config import settings
+    pc = (postal_code or "").strip() or settings.default_postal_code
+    try:
+        data = instacart_client.get_stores(pc)
+        stores = (data.get("data") or {}).get("stores") or []
+    except Exception as e:
+        logger.warning("stores.fetch_failed postal=%s error=%s", pc, e)
+        stores = []
+    return {"stores": [{"slug": s.get("slug"), "name": s.get("name", s.get("slug", ""))} for s in stores if s.get("slug")]}
+
+
 PLACEHOLDER_COST = 1.0
 PLACEHOLDER_QTY = 999999.0
 
@@ -31,9 +48,21 @@ def list_recipes(exclude_allergens: str | None = None):
     """
     Return all recipes for display.
     exclude_allergens: comma-separated allergen codes to filter out (e.g. nuts,milk).
+    Recipes with ingredients marked sku_unavailable get has_unavailable_ingredients=True
+    and unavailable_ingredient_names=[...]; display them greyed out, exclude from plan.
     """
     with get_session() as session:
         recipes = list(session.exec(select(Recipe)))
+        recipe_ingredients = list(session.exec(select(RecipeIngredient)))
+        ingredients = {i.id: i for i in session.exec(select(Ingredient))}
+        # Map recipe_id -> set of ingredient canonical_names that are sku_unavailable
+        unavailable_by_recipe: dict[int, list[str]] = {}
+        for ri in recipe_ingredients:
+            ing = ingredients.get(ri.ingredient_id)
+            if ing and getattr(ing, "sku_unavailable", False):
+                unavailable_by_recipe.setdefault(ri.recipe_id, []).append(
+                    ing.canonical_name or ing.name
+                )
         exclude_set = set()
         if exclude_allergens:
             exclude_set = {a.strip().lower() for a in exclude_allergens.split(",") if a.strip()}
@@ -42,6 +71,7 @@ def list_recipes(exclude_allergens: str | None = None):
             allergens = (r.allergens or []) if hasattr(r, "allergens") else []
             if exclude_set and set(allergens) & exclude_set:
                 continue
+            unavailable_names = list(dict.fromkeys(unavailable_by_recipe.get(r.id, [])))
             result.append({
                 "id": r.id,
                 "name": r.name,
@@ -50,6 +80,8 @@ def list_recipes(exclude_allergens: str | None = None):
                 "source_file": r.source_file,
                 "meal_type": getattr(r, "meal_type", "entree"),
                 "allergens": allergens,
+                "has_unavailable_ingredients": len(unavailable_names) > 0,
+                "unavailable_ingredient_names": unavailable_names,
             })
         return result
 
@@ -64,20 +96,31 @@ def ingredients_with_skus():
         valid_skus = [s for s in skus if s.expires_at > now]
         skus_by_ingredient: dict[int, list] = {}
         for s in valid_skus:
-            skus_by_ingredient.setdefault(s.ingredient_id, []).append({
+            skus_by_ingredient.setdefault(s.ingredient_id, []).append(s)
+        def _sku_row(s) -> dict:
+            size = getattr(s, "size_display", None) or s.size
+            qty = getattr(s, "quantity_in_base_unit", None)
+            price = s.price
+            ppu = None
+            if price is not None and qty and qty > 0:
+                ppu = round(price / qty, 6)
+            out = {
                 "id": s.id,
                 "name": s.name,
                 "brand": s.brand,
-                "size": s.size,
-                "price": s.price,
+                "size": size,
+                "price": price,
                 "retailer_slug": s.retailer_slug,
-            })
+            }
+            if ppu is not None:
+                out["price_per_base_unit"] = ppu
+            return out
         return [
             {
                 "id": i.id,
                 "name": i.canonical_name,
                 "base_unit": i.base_unit,
-                "skus": skus_by_ingredient.get(i.id, []),
+                "skus": [_sku_row(sk) for sk in skus_by_ingredient.get(i.id, [])],
             }
             for i in ingredients
         ]
@@ -113,6 +156,14 @@ def plan(request: PlanRequest) -> PlanResponse:
                     if not (set(r.allergens or []) & exclude_set)
                 ]
             recipe_ingredients = list(session.exec(select(RecipeIngredient)))
+            ingredients = {i.id: i for i in session.exec(select(Ingredient))}
+            # Exclude recipes that contain any ingredient with sku_unavailable
+            recipe_ids_with_unavailable = {
+                ri.recipe_id
+                for ri in recipe_ingredients
+                if ingredients.get(ri.ingredient_id) and getattr(ingredients[ri.ingredient_id], "sku_unavailable", False)
+            }
+            recipes = [r for r in recipes if r.id not in recipe_ids_with_unavailable]
             skus = list(session.exec(select(SKU)))
             now = datetime.utcnow()
             valid_skus = [s for s in skus if s.expires_at > now]
@@ -138,6 +189,7 @@ def plan(request: PlanRequest) -> PlanResponse:
             if request.store_slugs:
                 store_slugs = [s.lower().strip().replace(" ", "-") for s in request.store_slugs if s]
 
+            ingredients_by_id = {i.id: i for i in session.exec(select(Ingredient))}
             sku_options = []
             ingredient_ids_with_options = set()
             for sku in valid_skus:
@@ -145,11 +197,16 @@ def plan(request: PlanRequest) -> PlanResponse:
                     slug = (sku.retailer_slug or "").lower()
                     if slug not in store_slugs:
                         continue
+                ing = ingredients_by_id.get(sku.ingredient_id)
+                base_unit = ing.base_unit if ing else "count"
+                qty = sku.quantity_in_base_unit
+                if qty is None or qty <= 0:
+                    qty, _ = convert_sku_size(sku.size, base_unit)
                 sku_options.append(
                     IngredientOption(
                         ingredient_id=sku.ingredient_id,
                         sku_id=sku.id,
-                        quantity=_parse_size(sku.size),
+                        quantity=qty,
                         cost=sku.price or 0.0,
                     )
                 )
@@ -229,7 +286,7 @@ def plan(request: PlanRequest) -> PlanResponse:
                         "brand": s.brand,
                         "retailer": s.retailer_slug,
                         "price": s.price,
-                        "size": s.size,
+                        "size": getattr(s, "size_display", None) or s.size,
                         "quantity": int(qty),
                     }
 
@@ -261,19 +318,22 @@ def plan(request: PlanRequest) -> PlanResponse:
                 first_line = (recipe.instructions or "").split(".")[0].strip()
                 if first_line:
                     first_line += "."
+                instructions_short = (recipe.instructions or "")[:500]
                 menu_card_list.append({
                     "name": recipe.name,
+                    "recipe_id": bid,
+                    "meal_type": recipe.meal_type or "entree",
                     "ingredients": [
                         ri.original_text for ri in recipe_ingredients
                         if ri.recipe_id == bid
                     ],
                     "description": first_line or f"A delicious {recipe.name}.",
+                    "instructions": instructions_short,
                 })
 
-            ingredients_by_id = {i.id: i for i in session.exec(select(Ingredient))}
             consolidated_shopping_list: list[dict] = []
             for ing_id, total_qty in ingredient_totals.items():
-                ing = ingredients_by_id.get(ing_id)
+                ing = ingredients_by_id.get(ing_id)  # already loaded above
                 if not ing:
                     continue
                 consolidated_shopping_list.append({

@@ -26,6 +26,7 @@ class Ingredient(SQLModel, table=True):
     base_unit: str
     base_unit_qty: float
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    sku_unavailable: bool = False  # True when SKU fetch explicitly returned 0 (no matching products)
 
 
 class RecipeIngredient(SQLModel, table=True):
@@ -45,6 +46,8 @@ class SKU(SQLModel, table=True):
     size: Optional[str] = None
     price: Optional[float] = None
     price_per_unit: Optional[str] = None
+    quantity_in_base_unit: Optional[float] = None  # e.g. 2267.95 for "5 lb" when base=g
+    size_display: Optional[str] = None  # e.g. "5 lb" for display
     retailer_slug: Optional[str] = None
     postal_code: Optional[str] = None
     fetched_at: datetime = Field(default_factory=datetime.utcnow)
