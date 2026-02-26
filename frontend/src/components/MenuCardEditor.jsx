@@ -77,7 +77,10 @@ function PrintableCardCanvas({ cards, onDescriptionChange }) {
         <div className="flex flex-col gap-2">
           {cards.map((dish, i) => {
             const mealType = dish?.meal_type || "entree";
-            const theme = THEME_STYLES[mealType] || THEME_STYLES.entree;
+            const theme =
+              dish?.background_color
+                ? { borderColor: dish.border_color || "hsl(0 0% 80%)", accentBg: dish.background_color }
+                : THEME_STYLES[mealType] || THEME_STYLES.entree;
             const description = dish?.description ?? "";
             return (
               <div
@@ -127,7 +130,18 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-export function MenuCardEditor({ menuCard, open, onClose }) {
+function formatQtyUnit(qty, unit) {
+  if (qty == null) return "";
+  const n = Number(qty);
+  const displayQty = Number.isFinite(n) ? (n % 1 === 0 ? n : n.toFixed(2)) : String(qty);
+  const u = unit && typeof unit === "string" ? unit.trim().toLowerCase() : "";
+  const canonical = ["g", "ml", "count", "tbsp", "tsp", "units"];
+  const first = u.split(/\s|\(|,|\)/)[0]?.trim() ?? "";
+  const finalUnit = canonical.includes(first) ? first : (first || "units");
+  return finalUnit ? `${displayQty} ${finalUnit}` : displayQty;
+}
+
+export function MenuCardEditor({ menuCard, shoppingList = [], itemsToPurchase = {}, open, onClose }) {
   const [cards, setCards] = useState([]);
   const [printMeta, setPrintMeta] = useState(DEFAULT_PRINT_META);
 
@@ -166,6 +180,8 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
           description: d.description ?? d.generated_description ?? "",
           allergens: d.allergens ?? [],
         })),
+        shopping_list: shoppingList || [],
+        items_to_purchase: Object.entries(itemsToPurchase || {}).map(([id, d]) => ({ id, ...d })),
       };
 
       const themeColors = {
@@ -177,7 +193,10 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
 
       const dishBlocks = data.map((dish) => {
         const mealType = (dish?.meal_type || "entree").toLowerCase();
-        const theme = themeColors[mealType] || themeColors.entree;
+        const theme =
+          dish?.background_color
+            ? { border: dish.border_color || "hsl(0 0% 80%)", bg: dish.background_color }
+            : themeColors[mealType] || themeColors.entree;
         const desc = escapeHtml((dish?.description ?? dish?.generated_description ?? "—").trim());
         const name = escapeHtml(dish?.name ?? "");
         const allergens = (dish?.allergens ?? []).map(escapeHtml).join(", ");
@@ -224,9 +243,68 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
 </body>
 </html>`;
 
+      const shoppingListHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Consolidated shopping list</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; }
+    .ingredient { color: #374151; flex: 1; }
+    .qty { font-weight: 500; margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Consolidated shopping list</h1>
+  <ul>
+${(shoppingList || []).map((item) => {
+  const qtyUnit = formatQtyUnit(item.quantity, item.unit);
+  const ing = escapeHtml((item.ingredient || "").trim() || "—");
+  return `    <li><span class="ingredient">${ing}</span><span class="qty">${escapeHtml(qtyUnit)}</span></li>`;
+}).join("\n")}
+  </ul>
+</body>
+</html>`;
+
+      const skuEntries = Object.entries(itemsToPurchase || {});
+      const itemsHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Items to purchase</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+    .item { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
+    .name { font-weight: 500; color: #111; }
+    .brand { color: #6b7280; font-size: 0.9em; }
+    .right { text-align: right; flex-shrink: 0; }
+    .price { font-weight: 600; color: #059669; }
+    .retailer { font-size: 0.8em; color: #6b7280; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <h1>Items to purchase</h1>
+${skuEntries.map(([, d]) => {
+  const name = escapeHtml(d?.name ?? "—");
+  const brand = d?.brand ? ` <span class="brand">(${escapeHtml(d.brand)})</span>` : "";
+  const price = d?.price != null ? `$${Number(d.price).toFixed(2)}` : "—";
+  const size = d?.size ? ` · ${escapeHtml(d.size)}` : "";
+  const qty = d?.quantity != null ? ` × ${d.quantity}` : "";
+  const retailer = d?.retailer ? `<div class="retailer">${escapeHtml(String(d.retailer).replace(/-/g, " "))}</div>` : "";
+  return `  <div class="item"><div><span class="name">${name}</span>${brand}</div><div class="right"><span class="price">${price}${escapeHtml(size)}${escapeHtml(qty)}</span>${retailer}</div></div>`;
+}).join("\n")}
+</body>
+</html>`;
+
       const zip = new JSZip();
       zip.file("menu-card.html", html);
       zip.file("metadata.json", JSON.stringify(metadata, null, 2));
+      zip.file("shopping-list.html", shoppingListHtml);
+      zip.file("items-to-purchase.html", itemsHtml);
 
       zip.generateAsync({ type: "blob" }).then((zipBlob) => {
         const url = URL.createObjectURL(zipBlob);

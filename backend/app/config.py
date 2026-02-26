@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Use LLM for allergen inference (more robust). If False, use keyword fallback.
     use_llm_allergens: bool = True
 
+    # Post-plan overseer: GPT-4o corrects anomalous unit/conversion errors.
+    use_overseer: bool = True
+
     class Config:
         env_file = ".env"
 

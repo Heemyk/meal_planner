@@ -8,7 +8,9 @@ import dspy
 from app.services.llm.dspy_client import run_with_logging
 from app.services.llm.prompts import (
     DESCRIPTION_TONE_PROMPT_VERSION,
+    DISH_COLOR_PROMPT_VERSION,
     DISH_DESCRIPTION_PROMPT_VERSION,
+    DISH_COLOR_TEMPLATE,
     TONE_PROMPT_TEMPLATE,
     DISH_DESCRIPTION_TEMPLATE,
 )
@@ -16,7 +18,21 @@ from app.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Thematic card styles by meal_type (subtle UI variation)
+# Food-vibe palette: background colors that evoke the dish
+DISH_COLOR_PALETTE: dict[str, dict[str, str]] = {
+    "warm_amber": {"borderColor": "hsl(36 90% 45%)", "accentBg": "hsl(36 90% 55% / 0.08)"},
+    "cream_tan": {"borderColor": "hsl(35 40% 55%)", "accentBg": "hsl(35 40% 65% / 0.1)"},
+    "sage_green": {"borderColor": "hsl(150 30% 40%)", "accentBg": "hsl(150 30% 50% / 0.08)"},
+    "tomato_red": {"borderColor": "hsl(0 70% 50%)", "accentBg": "hsl(0 70% 55% / 0.08)"},
+    "chocolate_brown": {"borderColor": "hsl(25 45% 35%)", "accentBg": "hsl(25 40% 50% / 0.1)"},
+    "lemon_yellow": {"borderColor": "hsl(48 95% 50%)", "accentBg": "hsl(48 90% 60% / 0.08)"},
+    "forest_green": {"borderColor": "hsl(140 50% 35%)", "accentBg": "hsl(140 40% 45% / 0.08)"},
+    "lavender": {"borderColor": "hsl(270 50% 55%)", "accentBg": "hsl(270 45% 65% / 0.08)"},
+    "rose": {"borderColor": "hsl(340 60% 55%)", "accentBg": "hsl(340 55% 65% / 0.08)"},
+    "soft_gold": {"borderColor": "hsl(38 60% 50%)", "accentBg": "hsl(38 55% 60% / 0.08)"},
+}
+
+# Thematic card styles by meal_type (fallback when no dish color)
 CARD_THEMES = {
     "appetizer": {
         "accent": "amber",
@@ -64,6 +80,31 @@ def _generate_tone(dish_names: list[str]) -> str:
     except Exception as e:
         logger.warning("materials.tone_failed error=%s", e)
         return "Warm and inviting, with classic menu phrasing."
+
+
+def _infer_dish_color(dish_name: str, ingredients: list[str]) -> dict[str, str]:
+    """Infer background color that matches the food's vibe. Returns {borderColor, accentBg}."""
+    ing_str = ", ".join((ingredients or [])[:15])
+    prompt = DISH_COLOR_TEMPLATE.format(dish_name=dish_name or "", ingredients=ing_str)
+    try:
+        class DishColorSignature(dspy.Signature):
+            """Pick the palette key for this dish. Output only the key."""
+            prompt: str = dspy.InputField(desc="dish name and ingredients")
+            color_key: str = dspy.OutputField(desc="one word key from palette, e.g. warm_amber")
+
+        predictor = dspy.Predict(DishColorSignature)
+        pred = run_with_logging(
+            prompt_name="dish_color",
+            prompt_version=DISH_COLOR_PROMPT_VERSION,
+            fn=lambda **_: predictor(prompt=prompt),
+        )
+        raw = (getattr(pred, "color_key", "") or "").strip().lower()
+        key = raw.replace(" ", "_") if raw else ""
+        if key in DISH_COLOR_PALETTE:
+            return DISH_COLOR_PALETTE[key]
+    except Exception as e:
+        logger.warning("materials.dish_color_failed dish=%s error=%s", dish_name, e)
+    return DISH_COLOR_PALETTE["cream_tan"]
 
 
 def _generate_dish_description(
@@ -127,11 +168,15 @@ def generate_materials(menu_card: list[dict]) -> list[dict]:
             tone_prompt=tone_prompt,
         )
 
+        dish_color = _infer_dish_color(dish_name=d.get("name", ""), ingredients=ingredients)
+
         result.append({
             **d,
             "generated_description": description,
             "theme": theme,
             "meal_type": meal_type,
+            "background_color": dish_color.get("accentBg"),
+            "border_color": dish_color.get("borderColor"),
         })
 
     return result

@@ -1,0 +1,178 @@
+{
+  "resolution_dpi": 300,
+  "bleed": "3mm",
+  "paper_stock": "Matte 120gsm",
+  "paper_size": "A4",
+  "finishes": "None",
+  "menu_card": [
+    {
+      "name": "Lemon Herb Roasted Chicken",
+      "meal_type": "entree",
+      "description": "Succulent lemon herb roasted chicken, infused with garlic and fresh rosemary, offers a delightful harmony of comforting flavors. Perfectly golden and tender, this dish brings warmth and elegance to your cozy dinner gathering.",
+      "allergens": []
+    },
+    {
+      "name": "Garlic Mashed Potatoes",
+      "meal_type": "side",
+      "description": "Indulge in our creamy Garlic Mashed Potatoes, where fluffy russet potatoes meet rich heavy cream and buttery goodness, all elevated by the warmth of roasted garlic. This comforting side dish promises to bring a touch of elegance to your cozy dinner gathering.",
+      "allergens": []
+    },
+    {
+      "name": "Steamed Asparagus with Lemon Butter",
+      "meal_type": "side",
+      "description": "Delight in our tender-crisp steamed asparagus, elegantly drizzled with rich lemon butter and a sprinkle of salt and pepper. This dish brings a touch of warmth and sophistication to your cozy dinner gathering.",
+      "allergens": [
+        "milk"
+      ]
+    }
+  ],
+  "shopping_list": [
+    {
+      "ingredient": "chicken",
+      "quantity": 3,
+      "unit": "count"
+    },
+    {
+      "ingredient": "olive oil",
+      "quantity": 180,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "lemon",
+      "quantity": 81,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "garlic",
+      "quantity": 18,
+      "unit": "count"
+    },
+    {
+      "ingredient": "rosemary",
+      "quantity": 6,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "thyme",
+      "quantity": 3,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "salt",
+      "quantity": 0,
+      "unit": "tsp"
+    },
+    {
+      "ingredient": "potato",
+      "quantity": 1814.36,
+      "unit": "g"
+    },
+    {
+      "ingredient": "heavy cream",
+      "quantity": 240,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "butter",
+      "quantity": 253.4,
+      "unit": "g"
+    },
+    {
+      "ingredient": "asparagus",
+      "quantity": 2267.95,
+      "unit": "g"
+    }
+  ],
+  "items_to_purchase": [
+    {
+      "id": "3",
+      "name": "Colossal Garlic, 2 lbs",
+      "brand": "christopher ranch",
+      "retailer": "costco",
+      "price": 8.2,
+      "size": "2 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "8",
+      "name": "Store Brand Russet Potatoes",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 3.99,
+      "size": "5 lb",
+      "quantity": 1
+    },
+    {
+      "id": "12",
+      "name": "Organic Asparagus, 2.25 lbs",
+      "brand": "devine organics, llc.",
+      "retailer": "costco",
+      "price": 12.43,
+      "size": "2.25 lbs",
+      "quantity": 3
+    },
+    {
+      "id": "13",
+      "name": "Nature's Promise Thyme",
+      "brand": "nature's promise",
+      "retailer": "stop-shop",
+      "price": 2.39,
+      "size": "0.5 oz",
+      "quantity": 2
+    },
+    {
+      "id": "18",
+      "name": "Store Brand Heavy Whipping Cream",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 4.99,
+      "size": "16 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "27",
+      "name": "Pompeian Early Harvest Extra Virgin Olive Oil, 68 fl oz",
+      "brand": "pompeian",
+      "retailer": "costco",
+      "price": 19.89,
+      "size": "68 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "29",
+      "name": "Badia Spices Rosemary",
+      "brand": "badia spices",
+      "retailer": "stop-shop",
+      "price": 2.99,
+      "size": "1 oz",
+      "quantity": 3
+    },
+    {
+      "id": "38",
+      "name": "Kirkland Signature Rotisserie Chicken",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 6.21,
+      "size": "each",
+      "quantity": 3
+    },
+    {
+      "id": "54",
+      "name": "Kirkland Signature Salted Sweet Cream Butter, 16 oz, 4-count",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 10.56,
+      "size": "16 oz",
+      "quantity": 1
+    },
+    {
+      "id": "63",
+      "name": "Lemon",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 0.79,
+      "size": "1 each",
+      "quantity": 2
+    }
+  ]
+}

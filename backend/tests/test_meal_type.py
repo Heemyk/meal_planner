@@ -6,6 +6,7 @@ from app.services.parsing.recipe_parser import infer_meal_type
 def test_infer_meal_type_entree_default():
     assert infer_meal_type("Chicken Stir Fry", "Cook the chicken") == "entree"
     assert infer_meal_type("Beef Stew", "") == "entree"
+    assert infer_meal_type("Thai Chicken Curry", "Cook the curry") == "entree"
 
 
 def test_infer_meal_type_dessert():

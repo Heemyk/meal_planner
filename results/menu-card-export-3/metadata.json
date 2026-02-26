@@ -1,0 +1,285 @@
+{
+  "resolution_dpi": 300,
+  "bleed": "3mm",
+  "paper_stock": "Matte 120gsm",
+  "paper_size": "A4",
+  "finishes": "None",
+  "menu_card": [
+    {
+      "name": "Beef Tacos",
+      "meal_type": "entree",
+      "description": "Savor the fiesta with our juicy beef tacos, seasoned to perfection and piled high with melted cheddar, crisp lettuce, and fresh tomatoes. Dive in with a side of zesty salsa and creamy sour cream for the ultimate flavor explosion!",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Chicken Quesadillas",
+      "meal_type": "side",
+      "description": "Savor the fiesta with our Chicken Quesadillas, packed with tender shredded chicken, gooey cheddar, and a colorful mix of bell peppers and onions, all grilled to crispy perfection. Perfect for sharing, these cheesy delights are a crowd-pleaser that brings everyone together!",
+      "allergens": []
+    },
+    {
+      "name": "Mexican Rice",
+      "meal_type": "entree",
+      "description": "Savor the vibrant flavors of our Mexican Rice, where fluffy long-grain rice meets zesty tomato sauce and aromatic spices. Perfectly seasoned and cooked to perfection, it's a delightful side that brings a festive touch to any gathering!",
+      "allergens": []
+    }
+  ],
+  "shopping_list": [
+    {
+      "ingredient": "beef",
+      "quantity": 1360.77,
+      "unit": "g"
+    },
+    {
+      "ingredient": "taco seasoning",
+      "quantity": 85.05,
+      "unit": "g"
+    },
+    {
+      "ingredient": "taco shell",
+      "quantity": 36,
+      "unit": "count"
+    },
+    {
+      "ingredient": "cheddar cheese",
+      "quantity": 800,
+      "unit": "g"
+    },
+    {
+      "ingredient": "lettuce",
+      "quantity": 3,
+      "unit": "count"
+    },
+    {
+      "ingredient": "tomato",
+      "quantity": 3,
+      "unit": "count"
+    },
+    {
+      "ingredient": "salsa",
+      "quantity": 3,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "tortilla",
+      "quantity": 10,
+      "unit": "count"
+    },
+    {
+      "ingredient": "chicken",
+      "quantity": 2.95,
+      "unit": "count"
+    },
+    {
+      "ingredient": "green bell pepper",
+      "quantity": 1.25,
+      "unit": "count"
+    },
+    {
+      "ingredient": "onion",
+      "quantity": 2.59,
+      "unit": "count"
+    },
+    {
+      "ingredient": "vegetable oil",
+      "quantity": 135,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "long-grain rice",
+      "quantity": 360,
+      "unit": "g"
+    },
+    {
+      "ingredient": "garlic",
+      "quantity": 4,
+      "unit": "count"
+    },
+    {
+      "ingredient": "chicken broth",
+      "quantity": 960,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "tomato sauce",
+      "quantity": 480,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "cumin",
+      "quantity": 0.67,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "salt",
+      "quantity": 0,
+      "unit": "tsp"
+    }
+  ],
+  "items_to_purchase": [
+    {
+      "id": "1",
+      "name": "Old El Paso Stand 'N Stuff Taco Shells",
+      "brand": "old el paso",
+      "retailer": "stop-shop",
+      "price": 3.49,
+      "size": "4.7 oz",
+      "quantity": 36
+    },
+    {
+      "id": "2",
+      "name": "Rastelli's Grass-Fed Ground Beef, 4 lbs",
+      "brand": "rastelli",
+      "retailer": "costco",
+      "price": 32.33,
+      "size": "4 lb",
+      "quantity": 1
+    },
+    {
+      "id": "6",
+      "name": "Adams Reserve Extra Sharp Cheddar Cheese Slices, 32 oz",
+      "brand": "great lakes cheese co inc",
+      "retailer": "costco",
+      "price": 10.81,
+      "size": "32 oz",
+      "quantity": 1
+    },
+    {
+      "id": "10",
+      "name": "Green Bell Pepper",
+      "brand": null,
+      "retailer": "market-basket",
+      "price": 2.99,
+      "size": "1 each",
+      "quantity": 2
+    },
+    {
+      "id": "14",
+      "name": "Guillermo's Medium Salsa, 26 oz",
+      "brand": "guillermo's",
+      "retailer": "costco",
+      "price": 8.45,
+      "size": "26 oz",
+      "quantity": 1
+    },
+    {
+      "id": "17",
+      "name": "Romaine Lettuce Hearts",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 4.79,
+      "size": "3 ct",
+      "quantity": 1
+    },
+    {
+      "id": "19",
+      "name": "Mission Flour Tortillas, Soft Taco, 2 x 20 count",
+      "brand": "mission",
+      "retailer": "costco",
+      "price": 7.45,
+      "size": "each",
+      "quantity": 10
+    },
+    {
+      "id": "23",
+      "name": "Red On the Vine Tomato",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 1.08,
+      "size": "1 lb bunch",
+      "quantity": 1
+    },
+    {
+      "id": "26",
+      "name": "Eastside Rice, Long Grain, 25 lbs",
+      "brand": "eastside ",
+      "retailer": "costco",
+      "price": 14.42,
+      "size": "25 lb",
+      "quantity": 1
+    },
+    {
+      "id": "31",
+      "name": "Store Brand Seasoning Mix, Taco",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 0.99,
+      "size": "1.25 oz",
+      "quantity": 3
+    },
+    {
+      "id": "32",
+      "name": "Colossal Garlic, 2 lbs",
+      "brand": "christopher ranch",
+      "retailer": "costco",
+      "price": 8.2,
+      "size": "2 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "38",
+      "name": "Yellow Onion",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 0.92,
+      "size": "1 each",
+      "quantity": 3
+    },
+    {
+      "id": "42",
+      "name": "Kirkland Signature Rotisserie Chicken",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 6.21,
+      "size": "each",
+      "quantity": 3
+    },
+    {
+      "id": "47",
+      "name": "Store Brand 100% Vegetable Oil",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 3.99,
+      "size": "24 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "57",
+      "name": "Goya Tomato Sauce, Spanish Style",
+      "brand": "goya",
+      "retailer": "stop-shop",
+      "price": 0.99,
+      "size": "8 oz",
+      "quantity": 1
+    },
+    {
+      "id": "61",
+      "name": "Store Brand Tomato Sauce",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.49,
+      "size": "15 oz",
+      "quantity": 1
+    },
+    {
+      "id": "63",
+      "name": "Store Brand Broth, Chicken",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.99,
+      "size": "32 oz",
+      "quantity": 2
+    },
+    {
+      "id": "70",
+      "name": "Badia Spices Cumin, Ground",
+      "brand": "badia spices",
+      "retailer": "market-basket",
+      "price": 0.89,
+      "size": "1 oz",
+      "quantity": 1
+    }
+  ]
+}

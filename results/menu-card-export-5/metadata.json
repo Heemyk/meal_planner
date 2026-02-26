@@ -1,0 +1,302 @@
+{
+  "resolution_dpi": 300,
+  "bleed": "3mm",
+  "paper_stock": "Matte 120gsm",
+  "paper_size": "A4",
+  "finishes": "None",
+  "menu_card": [
+    {
+      "name": "Grilled Salmon with Dill Sauce",
+      "meal_type": "side",
+      "description": "Savor the essence of summer with our Grilled Salmon, perfectly charred and drizzled with a zesty dill sauce. Served with a side of fresh lemon wedges, this dish promises a burst of vibrant flavors that celebrate the Mediterranean spirit.",
+      "allergens": [
+        "fish",
+        "milk"
+      ]
+    },
+    {
+      "name": "Cucumber Dill Salad",
+      "meal_type": "appetizer",
+      "description": "Refreshingly crisp, our Cucumber Dill Salad features thinly sliced cucumbers and red onions tossed in a creamy dill dressing, bringing a burst of vibrant Mediterranean flavors to your table. Perfectly light and zesty, it's the ideal accompaniment for a sun-soaked dinner party.",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Lemon Rice Pilaf",
+      "meal_type": "entree",
+      "description": "A fragrant blend of basmati rice infused with zesty lemon and sautéed onions, this Lemon Rice Pilaf is a refreshing side that brings a burst of Mediterranean sunshine to your dinner table. Light, vibrant, and perfectly seasoned, it’s the ideal complement to any summer feast.",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Greek Chicken Kebabs",
+      "meal_type": "entree",
+      "description": "Savor the essence of summer with our Greek Chicken Kebabs, marinated in zesty lemon and fragrant oregano. Grilled to perfection, these tender bites are a celebration of fresh Mediterranean flavors, perfect for your next gathering.",
+      "allergens": []
+    },
+    {
+      "name": "Tzatziki Sauce",
+      "meal_type": "entree",
+      "description": "Cool and creamy, our Tzatziki Sauce blends velvety Greek yogurt with refreshing cucumber, zesty lemon, and fragrant dill for a vibrant dip that embodies the essence of summer. Perfect for pairing with grilled meats or fresh veggies, it’s a delightful addition to any relaxed gathering.",
+      "allergens": []
+    }
+  ],
+  "shopping_list": [
+    {
+      "ingredient": "salmon",
+      "quantity": 1700.95,
+      "unit": "g"
+    },
+    {
+      "ingredient": "olive oil",
+      "quantity": 255,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "salt",
+      "quantity": 0,
+      "unit": "tsp"
+    },
+    {
+      "ingredient": "lemon",
+      "quantity": 11.09,
+      "unit": "count"
+    },
+    {
+      "ingredient": "sour cream",
+      "quantity": 480,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "dill",
+      "quantity": 13,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "cucumber",
+      "quantity": 8.5,
+      "unit": "count"
+    },
+    {
+      "ingredient": "red onion",
+      "quantity": 0.75,
+      "unit": "count"
+    },
+    {
+      "ingredient": "vinegar",
+      "quantity": 45,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "basmati rice",
+      "quantity": 720,
+      "unit": "g"
+    },
+    {
+      "ingredient": "butter",
+      "quantity": 56,
+      "unit": "g"
+    },
+    {
+      "ingredient": "onion",
+      "quantity": 2,
+      "unit": "count"
+    },
+    {
+      "ingredient": "chicken broth",
+      "quantity": 1200,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "chicken",
+      "quantity": 7.95,
+      "unit": "count"
+    },
+    {
+      "ingredient": "garlic",
+      "quantity": 11,
+      "unit": "count"
+    },
+    {
+      "ingredient": "oregano",
+      "quantity": 3,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "skewer",
+      "quantity": 3,
+      "unit": "count"
+    },
+    {
+      "ingredient": "greek yogurt",
+      "quantity": 1200,
+      "unit": "g"
+    }
+  ],
+  "items_to_purchase": [
+    {
+      "id": "7",
+      "name": "Red Onion",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 1.41,
+      "size": "1 lb",
+      "quantity": 1
+    },
+    {
+      "id": "10",
+      "name": "Kirkland Signature Wild Sockeye Salmon Fillet",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 34.8,
+      "size": "each",
+      "quantity": 1
+    },
+    {
+      "id": "53",
+      "name": "Store Brand Grade A Sour Cream",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 2.79,
+      "size": "16 oz",
+      "quantity": 1
+    },
+    {
+      "id": "57",
+      "name": "Store Brand Sour Cream",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.99,
+      "size": "8 oz",
+      "quantity": 1
+    },
+    {
+      "id": "63",
+      "name": "Royal, Basmati Rice, 20 lbs",
+      "brand": "royal",
+      "retailer": "costco",
+      "price": 26.11,
+      "size": "20 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "65",
+      "name": "Terra Delyssa Organic Extra Virgin Olive Oil, 67.63 fl oz",
+      "brand": "terra delyssa",
+      "retailer": "costco",
+      "price": 22.26,
+      "size": "1 L",
+      "quantity": 1
+    },
+    {
+      "id": "74",
+      "name": "Old Style Distilled White Vinegar, 64 fl oz, 6-count",
+      "brand": "old style",
+      "retailer": "costco",
+      "price": 9.94,
+      "size": "64 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "83",
+      "name": "Yellow Onion",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 0.92,
+      "size": "1 each",
+      "quantity": 2
+    },
+    {
+      "id": "89",
+      "name": "English Cucumber",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 2.39,
+      "size": "3 ct",
+      "quantity": 3
+    },
+    {
+      "id": "94",
+      "name": "Badia Spices Dill Weed",
+      "brand": "badia spices",
+      "retailer": "stop-shop",
+      "price": 3.59,
+      "size": "0.5 oz",
+      "quantity": 8
+    },
+    {
+      "id": "98",
+      "name": "Lemon",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 0.79,
+      "size": "1 each",
+      "quantity": 1
+    },
+    {
+      "id": "108",
+      "name": "Colossal Garlic, 2 lbs",
+      "brand": "christopher ranch",
+      "retailer": "costco",
+      "price": 8.2,
+      "size": "2 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "111",
+      "name": "Store Brand Broth, Chicken",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.99,
+      "size": "32 oz",
+      "quantity": 2
+    },
+    {
+      "id": "116",
+      "name": "Kirkland Signature Salted Sweet Cream Butter, 16 oz, 4-count",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 10.56,
+      "size": "16 oz",
+      "quantity": 1
+    },
+    {
+      "id": "121",
+      "name": "Badia Spices Oregano",
+      "brand": "badia spices",
+      "retailer": "stop-shop",
+      "price": 3.99,
+      "size": "2.25 oz",
+      "quantity": 1
+    },
+    {
+      "id": "126",
+      "name": "Kirkland Signature Fresh Boneless Skinless Chicken Breasts, 6 lb Avg Wt",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 31.25,
+      "size": "6 lb",
+      "quantity": 1
+    },
+    {
+      "id": "130",
+      "name": "Smart Living Skewers Bamboo 9.75 Inch",
+      "brand": "smart living",
+      "retailer": "stop-shop",
+      "price": 2.39,
+      "size": "100 ct",
+      "quantity": 1
+    },
+    {
+      "id": "137",
+      "name": "Skotidakis 5% Greek Yogurt, 48 oz",
+      "brand": "skotidakis",
+      "retailer": "costco",
+      "price": 7.2,
+      "size": "48 oz",
+      "quantity": 1
+    }
+  ]
+}

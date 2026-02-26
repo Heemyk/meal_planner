@@ -182,6 +182,20 @@ export async function getStores(postalCode) {
 }
 
 /**
+ * Clear all databases (Postgres + Redis). Destructive — removes recipes, ingredients, SKUs, plans, LLM logs.
+ */
+export async function clearAllData() {
+  apiLogger.info("clear_all.start");
+  const response = await fetch(`${API_URL}/clear`, { method: "POST" });
+  if (!response.ok) {
+    apiLogger.error("clear_all.error", { status: response.status });
+    throw new Error("Clear failed");
+  }
+  apiLogger.info("clear_all.success");
+  return response.json();
+}
+
+/**
  * Get location (postal code) from IP for Instacart pricing.
  * Returns { postal_code, in_us, error? }.
  * If outside US, error is set and default postal is used.

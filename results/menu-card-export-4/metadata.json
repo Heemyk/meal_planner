@@ -1,0 +1,245 @@
+{
+  "resolution_dpi": 300,
+  "bleed": "3mm",
+  "paper_stock": "Matte 120gsm",
+  "paper_size": "A4",
+  "finishes": "None",
+  "menu_card": [
+    {
+      "name": "Thai Chicken Curry",
+      "meal_type": "entree",
+      "description": "Savor the vibrant essence of our Thai Chicken Curry, where tender chicken thighs meld with aromatic red curry paste and creamy coconut milk, creating a symphony of flavors. Garnished with fresh basil and colorful vegetables, this dish promises a tropical escape in every bite.",
+      "allergens": []
+    },
+    {
+      "name": "Coconut Rice",
+      "meal_type": "entree",
+      "description": "Experience the tropical allure of our Coconut Rice, where fluffy jasmine rice is luxuriously infused with creamy coconut milk, creating a delightful harmony of flavors. Perfectly paired with your favorite Thai dishes, this side will transport your taste buds to a sun-kissed paradise.",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Mango Salad",
+      "meal_type": "appetizer",
+      "description": "Experience a burst of tropical bliss with our vibrant Mango Salad, featuring sweet, ripe mangoes tossed with zesty lime, crisp red onion, and fragrant cilantro. This refreshing dish is a perfect harmony of flavors that will transport you straight to the heart of Thailand.",
+      "allergens": [
+        "fish"
+      ]
+    }
+  ],
+  "shopping_list": [
+    {
+      "ingredient": "chicken thigh",
+      "quantity": 1,
+      "unit": "count"
+    },
+    {
+      "ingredient": "red curry paste",
+      "quantity": 30,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "coconut milk",
+      "quantity": 800,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "fish sauce",
+      "quantity": 20,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "brown sugar",
+      "quantity": 20,
+      "unit": "g"
+    },
+    {
+      "ingredient": "bell pepper",
+      "quantity": 1,
+      "unit": "count"
+    },
+    {
+      "ingredient": "green bean",
+      "quantity": 1,
+      "unit": "count"
+    },
+    {
+      "ingredient": "basil",
+      "quantity": 1,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "jasmine rice",
+      "quantity": 480,
+      "unit": "g"
+    },
+    {
+      "ingredient": "water",
+      "quantity": 360,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "salt",
+      "quantity": 1,
+      "unit": "count"
+    },
+    {
+      "ingredient": "mango",
+      "quantity": 2,
+      "unit": "count"
+    },
+    {
+      "ingredient": "red onion",
+      "quantity": 0.25,
+      "unit": "count"
+    },
+    {
+      "ingredient": "cilantro",
+      "quantity": 4,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "lime",
+      "quantity": 0.33,
+      "unit": "count"
+    }
+  ],
+  "items_to_purchase": [
+    {
+      "id": "2",
+      "name": "Thai Kitchen Organic Coconut Milk, Unsweetened, 13.66 fl oz, 6-count",
+      "brand": "thai kitchen",
+      "retailer": "costco",
+      "price": 14.17,
+      "size": "13.66 fl oz",
+      "quantity": 2
+    },
+    {
+      "id": "3",
+      "name": "Organic Green Beans, 2 lbs",
+      "brand": "green wve farms, llc.",
+      "retailer": "costco",
+      "price": 9.94,
+      "size": "2 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "4",
+      "name": "Kirkland Signature, Thai Hom Mali Jasmine Rice, 25 lbs",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 29.84,
+      "size": "25 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "5",
+      "name": "Maesri Curry Paste, Red",
+      "brand": "maesri",
+      "retailer": "unknown-119",
+      "price": 2.39,
+      "size": "4 oz",
+      "quantity": 1
+    },
+    {
+      "id": "8",
+      "name": "Seedless Mini Peppers, 1.5 lbs",
+      "brand": "seedless mini",
+      "retailer": "costco",
+      "price": 7.45,
+      "size": "1.5 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "10",
+      "name": "Limes, 3 lbs",
+      "brand": null,
+      "retailer": "costco",
+      "price": 6.21,
+      "size": "3 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "14",
+      "name": "Spice Classics® Basil Leaves",
+      "brand": "spice classics®",
+      "retailer": "market-basket",
+      "price": 1.49,
+      "size": "0.75 oz",
+      "quantity": 1
+    },
+    {
+      "id": "22",
+      "name": "Store Brand Dark Brown Sugar",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.99,
+      "size": "16 oz",
+      "quantity": 1
+    },
+    {
+      "id": "26",
+      "name": "Cilantro",
+      "brand": null,
+      "retailer": "market-basket",
+      "price": 2.49,
+      "size": "1 each",
+      "quantity": 4
+    },
+    {
+      "id": "34",
+      "name": "Organic Ataulfo Mangos, 6-count",
+      "brand": "freska produce, llc",
+      "retailer": "costco",
+      "price": 11.18,
+      "size": "each",
+      "quantity": 1
+    },
+    {
+      "id": "35",
+      "name": "Red Onion",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 1.41,
+      "size": "1 lb",
+      "quantity": 1
+    },
+    {
+      "id": "39",
+      "name": "Nature's Promise Natural Bone-In Chicken Thighs Fresh",
+      "brand": "nature's promise",
+      "retailer": "stop-shop",
+      "price": 2.79,
+      "size": "1 each",
+      "quantity": 1
+    },
+    {
+      "id": "44",
+      "name": "Kikkoman Sauce, Fish",
+      "brand": "kikkoman",
+      "retailer": "unknown-119",
+      "price": 4.79,
+      "size": "6.8 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "48",
+      "name": "Diamond Crystal Iodized Salt, 4 lbs",
+      "brand": "cargill",
+      "retailer": "costco",
+      "price": 1.85,
+      "size": "4 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "52",
+      "name": "Kirkland Signature Alkaline Water, 1 L, 18-count",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 12.43,
+      "size": "33.8 fl oz",
+      "quantity": 1
+    }
+  ]
+}

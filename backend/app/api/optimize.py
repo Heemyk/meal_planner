@@ -12,7 +12,9 @@ from app.services.sku.instacart_client import instacart_client
 from app.storage.db import get_session
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
 from app.services.allergens import get_all_allergen_codes
+from app.services.llm.dspy_client import configure_dspy
 from app.services.llm.sku_size_converter import convert_sku_size
+from app.services.overseer import apply_corrections, detect_anomalies, run_overseer_correction
 from app.storage.repositories import create_menu_plan
 
 router = APIRouter()
@@ -204,6 +206,7 @@ def sku_status() -> dict:
 def plan(request: PlanRequest) -> PlanResponse:
     with time_span("plan.total", servings=request.target_servings):
         logger.info("plan.start servings=%s", request.target_servings)
+        configure_dspy()
         with get_session() as session:
             recipes = list(session.exec(select(Recipe)))
             if request.exclude_allergens:
@@ -404,6 +407,113 @@ def plan(request: PlanRequest) -> PlanResponse:
                     "quantity": round(total_qty, 2),
                     "unit": _sanitize_base_unit(display_unit) or "units",
                 })
+
+            # Overseer: post-plan anomaly correction (iterative)
+            sku_id_to_ingredient_id = {str(s.id): s.ingredient_id for s in valid_skus}
+            for overseer_iter in range(3):
+                if result.get("status") == "Infeasible" or not getattr(settings, "use_overseer", True):
+                    break
+                anomalies = detect_anomalies(sku_details, sku_id_to_ingredient_id)
+                if not anomalies:
+                    break
+                total_applied = 0
+                for anom in anomalies:
+                    ing_id = anom.get("ingredient_id")
+                    sku_id_str = anom.get("sku_id")
+                    if not ing_id or not sku_id_str:
+                        continue
+                    ing = ingredients_by_id.get(ing_id)
+                    s = sku_by_id.get(sku_id_str)
+                    if not ing or not s:
+                        continue
+                    ris = []
+                    for ri in recipe_ingredients:
+                        if ri.ingredient_id != ing_id:
+                            continue
+                        rec = recipe_by_id.get(ri.recipe_id)
+                        ris.append({
+                            "id": ri.id,
+                            "recipe_id": ri.recipe_id,
+                            "recipe_name": rec.name if rec else "",
+                            "quantity": ri.quantity,
+                            "unit": ri.unit,
+                            "original_text": getattr(ri, "original_text", "") or "",
+                        })
+                    corrections = run_overseer_correction(
+                        anom,
+                        {"id": ing.id, "canonical_name": ing.canonical_name, "base_unit": ing.base_unit, "base_unit_qty": getattr(ing, "base_unit_qty", 1.0)},
+                        ris,
+                        {"name": s.name, "size": s.size, "size_display": getattr(s, "size_display", None) or s.size, "quantity_in_base_unit": s.quantity_in_base_unit, "price": s.price},
+                    )
+                    total_applied += apply_corrections(session, corrections)
+                if total_applied == 0:
+                    break
+                # Refetch and re-solve
+                session.expire_all()
+                recipe_ingredients = list(session.exec(select(RecipeIngredient)))
+                ingredients_by_id = {i.id: i for i in session.exec(select(Ingredient))}
+                skus = list(session.exec(select(SKU)))
+                now = datetime.utcnow()
+                valid_skus = [s for s in skus if s.expires_at > now]
+                if store_slugs:
+                    valid_skus = [s for s in valid_skus if (s.retailer_slug or "").lower() in store_slugs]
+                recipe_options = []
+                for recipe in recipes:
+                    requirements = {ri.ingredient_id: ri.quantity for ri in recipe_ingredients if ri.recipe_id == recipe.id}
+                    recipe_options.append(RecipeOption(recipe_id=recipe.id, servings=recipe.servings, ingredient_requirements=requirements))
+                sku_options = []
+                sku_id_to_ingredient_id = {}
+                for sku in valid_skus:
+                    ing = ingredients_by_id.get(sku.ingredient_id)
+                    base_unit = _sanitize_base_unit(ing.base_unit if ing else None) or "count"
+                    qty = sku.quantity_in_base_unit
+                    if qty is None or qty <= 0:
+                        qty, _ = convert_sku_size(sku.size, base_unit, product_name=sku.name or "")
+                    sku_options.append(IngredientOption(ingredient_id=sku.ingredient_id, sku_id=sku.id, quantity=qty, cost=sku.price or 0.0))
+                    sku_id_to_ingredient_id[str(sku.id)] = sku.ingredient_id
+                missing = all_required_ingredient_ids - {o.ingredient_id for o in sku_options}
+                for ingredient_id in missing:
+                    sku_options.append(IngredientOption(ingredient_id=ingredient_id, sku_id=PLACEHOLDER_ID_BASE + ingredient_id, quantity=PLACEHOLDER_QTY, cost=PLACEHOLDER_COST))
+                result = solve_ilp(request.target_servings, recipe_options, sku_options, solver_opts, recipe_meal_types=recipe_meal_types, meal_config=meal_config, include_every_recipe_ids=request.include_every_recipe_ids, required_recipe_ids=request.required_recipe_ids)
+                plan_payload = {"recipes": {str(k): int(v) if v is not None else 0 for k, v in (result.get("recipes") or {}).items()}, "skus": {str(k): int(v) if v is not None else 0 for k, v in (result.get("skus") or {}).items()}}
+                if result.get("status") != "Infeasible":
+                    create_menu_plan(session, request.target_servings, str(plan_payload))
+                sku_by_id = {str(s.id): s for s in valid_skus}
+                sku_details = {}
+                for sku_id_str, qty in (plan_payload.get("skus") or {}).items():
+                    if qty and sku_id_str in sku_by_id:
+                        s = sku_by_id[sku_id_str]
+                        sku_details[sku_id_str] = {"name": s.name, "brand": s.brand, "retailer": s.retailer_slug, "price": s.price, "size": getattr(s, "size_display", None) or s.size or "", "quantity": int(qty)}
+                recipe_details_list = []
+                ingredient_totals = {}
+                unit_by_ingredient = {}
+                menu_card_list = []
+                for rid, batches in (result.get("recipes") or {}).items():
+                    bid = int(rid)
+                    if not batches:
+                        continue
+                    recipe = recipe_by_id.get(bid)
+                    if not recipe:
+                        continue
+                    recipe_details_list.append({"recipe_id": bid, "name": recipe.name, "batches": int(batches), "servings_per_batch": recipe.servings, "total_servings": int(batches) * recipe.servings})
+                    scale = int(batches)
+                    for ri in recipe_ingredients:
+                        if ri.recipe_id != bid:
+                            continue
+                        ingredient_totals[ri.ingredient_id] = ingredient_totals.get(ri.ingredient_id, 0) + ri.quantity * scale
+                        unit_by_ingredient[ri.ingredient_id] = ri.unit
+                    first_line = (recipe.instructions or "").split(".")[0].strip()
+                    if first_line:
+                        first_line += "."
+                    menu_card_list.append({"name": recipe.name, "recipe_id": bid, "meal_type": recipe.meal_type or "entree", "allergens": recipe.allergens or [], "ingredients": [ri.original_text for ri in recipe_ingredients if ri.recipe_id == bid], "description": first_line or f"A delicious {recipe.name}.", "instructions": recipe.instructions or ""})
+                consolidated_shopping_list = []
+                for ing_id, total_qty in ingredient_totals.items():
+                    ing = ingredients_by_id.get(ing_id)
+                    if not ing:
+                        continue
+                    display_unit = unit_by_ingredient.get(ing_id) or ing.base_unit
+                    consolidated_shopping_list.append({"ingredient": ing.canonical_name, "quantity": round(total_qty, 2), "unit": _sanitize_base_unit(display_unit) or "units"})
+                logger.info("overseer.re_solve iter=%s applied=%s", overseer_iter + 1, total_applied)
 
         status = result.get("status", "Unknown")
         objective_val = result.get("objective")

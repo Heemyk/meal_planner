@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Menu Card</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; background: hsl(45 22% 96%); }
+    .menu { max-width: 420px; margin: 0 auto; }
+    .menu-title { font-size: 1.1rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(0,0,0,0.85); }
+    .menu-rule { height: 1px; width: 48px; background: rgba(0,0,0,0.15); margin: 8px 0 16px 0; }
+    .dish { display: flex; gap: 8px; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; }
+    .dish-accent { width: 2px; border-radius: 999px; flex-shrink: 0; }
+    .dish-content { flex: 1; min-width: 0; }
+    .dish-name { font-weight: 500; font-size: 13px; color: rgba(0,0,0,0.9); margin-bottom: 4px; }
+    .dish-desc { font-size: 10px; line-height: 1.4; color: rgba(0,0,0,0.6); white-space: pre-wrap; word-break: break-word; }
+    .allergens { font-size: 9px; color: rgba(180,83,9,0.9); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="menu">
+    <h1 class="menu-title">Menu</h1>
+    <div class="menu-rule"></div>
+    
+  <div class="dish" style="background-color:hsl(36 90% 55% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(36 90% 45%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Thai Chicken Curry</div>
+      <div class="dish-desc">Savor the vibrant essence of our Thai Chicken Curry, where tender chicken thighs meld with aromatic red curry paste and creamy coconut milk, creating a symphony of flavors. Garnished with fresh basil and colorful vegetables, this dish promises a tropical escape in every bite.</div>
+      
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(35 40% 65% / 0.1)">
+    <div class="dish-accent" style="background-color:hsl(35 40% 55%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Coconut Rice</div>
+      <div class="dish-desc">Experience the tropical allure of our Coconut Rice, where fluffy jasmine rice is luxuriously infused with creamy coconut milk, creating a delightful harmony of flavors. Perfectly paired with your favorite Thai dishes, this side will transport your taste buds to a sun-kissed paradise.</div>
+      <p class="allergens">Contains: milk</p>
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(150 30% 50% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(150 30% 40%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Mango Salad</div>
+      <div class="dish-desc">Experience a burst of tropical bliss with our vibrant Mango Salad, featuring sweet, ripe mangoes tossed with zesty lime, crisp red onion, and fragrant cilantro. This refreshing dish is a perfect harmony of flavors that will transport you straight to the heart of Thailand.</div>
+      <p class="allergens">Contains: fish</p>
+    </div>
+  </div>
+  </div>
+</body>
+</html>

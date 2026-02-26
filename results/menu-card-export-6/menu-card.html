@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Menu Card</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; background: hsl(45 22% 96%); }
+    .menu { max-width: 420px; margin: 0 auto; }
+    .menu-title { font-size: 1.1rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(0,0,0,0.85); }
+    .menu-rule { height: 1px; width: 48px; background: rgba(0,0,0,0.15); margin: 8px 0 16px 0; }
+    .dish { display: flex; gap: 8px; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; }
+    .dish-accent { width: 2px; border-radius: 999px; flex-shrink: 0; }
+    .dish-content { flex: 1; min-width: 0; }
+    .dish-name { font-weight: 500; font-size: 13px; color: rgba(0,0,0,0.9); margin-bottom: 4px; }
+    .dish-desc { font-size: 10px; line-height: 1.4; color: rgba(0,0,0,0.6); white-space: pre-wrap; word-break: break-word; }
+    .allergens { font-size: 9px; color: rgba(180,83,9,0.9); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="menu">
+    <h1 class="menu-title">Menu</h1>
+    <div class="menu-rule"></div>
+    
+  <div class="dish" style="background-color:hsl(25 40% 50% / 0.1)">
+    <div class="dish-accent" style="background-color:hsl(25 45% 35%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Beef Stroganoff</div>
+      <div class="dish-desc">Indulge in our Beef Stroganoff, where tender strips of beef sirloin are sautéed with earthy mushrooms and aromatic garlic, all enveloped in a creamy, savory sauce. Served over a bed of comforting noodles, this dish brings the warmth of home-cooked love to your table.</div>
+      <p class="allergens">Contains: milk, wheat</p>
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(36 90% 55% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(36 90% 45%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Buttered Egg Noodles</div>
+      <div class="dish-desc">Indulge in our buttery egg noodles, perfectly cooked and tossed with rich butter and a sprinkle of fresh parsley. This comforting dish brings the warmth of home to your table, making every bite a delightful reminder of family gatherings.</div>
+      <p class="allergens">Contains: eggs, milk</p>
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(150 30% 50% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(150 30% 40%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Green Bean Almondine</div>
+      <div class="dish-desc">Savor the delightful crunch of tender green beans, elegantly sautéed in butter and tossed with toasted almonds and a hint of garlic. This comforting dish brings a touch of warmth to your table, perfect for sharing with loved ones.</div>
+      <p class="allergens">Contains: milk, tree_nuts</p>
+    </div>
+  </div>
+  </div>
+</body>
+</html>

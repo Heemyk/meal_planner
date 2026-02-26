@@ -1,0 +1,504 @@
+{
+  "resolution_dpi": 300,
+  "bleed": "3mm",
+  "paper_stock": "Matte 120gsm",
+  "paper_size": "A4",
+  "finishes": "None",
+  "menu_card": [
+    {
+      "name": "Spaghetti Carbonara",
+      "meal_type": "entree",
+      "description": "Indulge in our Spaghetti Carbonara, where al dente pasta meets crispy pancetta and a creamy blend of eggs and Parmesan, creating a comforting dish that warms the heart. Perfect for sharing with friends, this classic Italian favorite brings a taste of home to your table.",
+      "allergens": [
+        "milk",
+        "wheat"
+      ]
+    },
+    {
+      "name": "Caesar Salad",
+      "meal_type": "appetizer",
+      "description": "Indulge in our classic Caesar Salad, featuring crisp romaine lettuce tossed with crunchy croutons and a generous sprinkle of Parmesan cheese, all drizzled with our creamy Caesar dressing. It's a timeless favorite that brings a taste of Italy to your table, perfect for sharing with friends.",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Garlic Bread",
+      "meal_type": "side",
+      "description": "Indulge in our warm, buttery garlic bread, perfectly toasted to golden perfection and infused with fragrant garlic and fresh parsley. It's the ideal companion for any meal, inviting you to savor every delightful bite in a cozy Italian embrace.",
+      "allergens": [
+        "milk",
+        "wheat"
+      ]
+    },
+    {
+      "name": "Vegetable Lasagna",
+      "meal_type": "entree",
+      "description": "Indulge in our hearty Vegetable Lasagna, layered with creamy ricotta, fresh spinach, and tender zucchini, all enveloped in rich marinara sauce. Baked to perfection and topped with melted mozzarella, it's a comforting dish that brings the warmth of Italy to your table.",
+      "allergens": [
+        "eggs",
+        "milk"
+      ]
+    },
+    {
+      "name": "Caprese Salad",
+      "meal_type": "appetizer",
+      "description": "Experience the vibrant flavors of our Caprese Salad, where ripe tomatoes and creamy fresh mozzarella are lovingly layered with fragrant basil. Drizzled with rich olive oil and a hint of balsamic vinegar, this dish is a refreshing taste of Italy that invites you to savor every bite.",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Baked Ziti",
+      "meal_type": "entree",
+      "description": "Indulge in our Baked Ziti, a comforting blend of ziti pasta, savory Italian sausage, and rich marinara, all enveloped in creamy ricotta and melted mozzarella. Topped with a sprinkle of Parmesan, this dish is a warm embrace of Italian flavors, perfect for sharing with loved ones.",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Garlic Knots",
+      "meal_type": "entree",
+      "description": "Indulge in our warm Garlic Knots, freshly baked from our pizza dough and brushed with a buttery garlic blend, then sprinkled with parsley and Parmesan for a delightful finish. Perfect for sharing, these knots bring a cozy touch to your gathering, inviting everyone to savor the flavors of Italy.",
+      "allergens": [
+        "milk"
+      ]
+    },
+    {
+      "name": "Antipasto Salad",
+      "meal_type": "appetizer",
+      "description": "Savor the vibrant flavors of our Antipasto Salad, a delightful mix of fresh greens, juicy cherry tomatoes, and savory salami, all tossed in a zesty Italian dressing. Perfect for sharing, this dish brings a taste of Italy to your table, inviting warmth and camaraderie.",
+      "allergens": [
+        "milk"
+      ]
+    }
+  ],
+  "shopping_list": [
+    {
+      "ingredient": "spaghetti",
+      "quantity": 1700.95,
+      "unit": "g"
+    },
+    {
+      "ingredient": "pancetta",
+      "quantity": 567,
+      "unit": "g"
+    },
+    {
+      "ingredient": "garlic",
+      "quantity": 52,
+      "unit": "count"
+    },
+    {
+      "ingredient": "egg",
+      "quantity": 14,
+      "unit": "count"
+    },
+    {
+      "ingredient": "parmesan cheese",
+      "quantity": 875,
+      "unit": "g"
+    },
+    {
+      "ingredient": "salt",
+      "quantity": 10,
+      "unit": "tsp"
+    },
+    {
+      "ingredient": "romaine lettuce",
+      "quantity": 4,
+      "unit": "count"
+    },
+    {
+      "ingredient": "crouton",
+      "quantity": 100,
+      "unit": "g"
+    },
+    {
+      "ingredient": "caesar dressing",
+      "quantity": 320,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "french bread",
+      "quantity": 2270,
+      "unit": "g"
+    },
+    {
+      "ingredient": "butter",
+      "quantity": 510.3,
+      "unit": "g"
+    },
+    {
+      "ingredient": "parsley",
+      "quantity": 130,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "lasagna noodle",
+      "quantity": 48,
+      "unit": "count"
+    },
+    {
+      "ingredient": "ricotta cheese",
+      "quantity": 1300,
+      "unit": "g"
+    },
+    {
+      "ingredient": "mozzarella cheese",
+      "quantity": 4318,
+      "unit": "g"
+    },
+    {
+      "ingredient": "marinara sauce",
+      "quantity": 4320,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "spinach",
+      "quantity": 1920,
+      "unit": "g"
+    },
+    {
+      "ingredient": "zucchini",
+      "quantity": 4,
+      "unit": "count"
+    },
+    {
+      "ingredient": "tomato",
+      "quantity": 1220,
+      "unit": "g"
+    },
+    {
+      "ingredient": "basil",
+      "quantity": 10,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "olive oil",
+      "quantity": 375,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "balsamic vinegar",
+      "quantity": 150,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "ziti",
+      "quantity": 1700.95,
+      "unit": "g"
+    },
+    {
+      "ingredient": "italian sausage",
+      "quantity": 2267.95,
+      "unit": "g"
+    },
+    {
+      "ingredient": "pizza dough",
+      "quantity": 1814.36,
+      "unit": "g"
+    },
+    {
+      "ingredient": "green",
+      "quantity": 20,
+      "unit": "count"
+    },
+    {
+      "ingredient": "black olive",
+      "quantity": 150,
+      "unit": "g"
+    },
+    {
+      "ingredient": "salami",
+      "quantity": 283.5,
+      "unit": "g"
+    },
+    {
+      "ingredient": "italian dressing",
+      "quantity": 300,
+      "unit": "ml"
+    }
+  ],
+  "items_to_purchase": [
+    {
+      "id": "8",
+      "name": "Del Duca Pancetta, Uncured, Diced",
+      "brand": "del duca",
+      "retailer": "market-basket",
+      "price": 4.99,
+      "size": "4 oz",
+      "quantity": 5
+    },
+    {
+      "id": "10",
+      "name": "Kirkland Signature Free Range Large Eggs Usda Grade A, 24-count",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 4.96,
+      "size": "each",
+      "quantity": 1
+    },
+    {
+      "id": "18",
+      "name": "Colossal Garlic, 2 lbs",
+      "brand": "christopher ranch",
+      "retailer": "costco",
+      "price": 8.2,
+      "size": "2 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "20",
+      "name": "Romaine Lettuce Hearts",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 4.79,
+      "size": "3 ct",
+      "quantity": 1
+    },
+    {
+      "id": "21",
+      "name": "Romaine Lettuce",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 2.99,
+      "size": "1 ct",
+      "quantity": 1
+    },
+    {
+      "id": "38",
+      "name": "Prince Spaghetti",
+      "brand": "prince",
+      "retailer": "market-basket",
+      "price": 1.59,
+      "size": "16 oz",
+      "quantity": 4
+    },
+    {
+      "id": "43",
+      "name": "Store Brand Caesar Dressing",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 2.39,
+      "size": "16 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "49",
+      "name": "Store Brand Homestyle Caesar Croutons",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.59,
+      "size": "5 oz",
+      "quantity": 1
+    },
+    {
+      "id": "64",
+      "name": "Diamond Crystal Iodized Salt, 4 lbs",
+      "brand": "cargill",
+      "retailer": "costco",
+      "price": 1.85,
+      "size": "4 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "69",
+      "name": "Market Basket French Bread",
+      "brand": "market basket",
+      "retailer": "market-basket",
+      "price": 2.49,
+      "size": "16 oz",
+      "quantity": 6
+    },
+    {
+      "id": "72",
+      "name": "Organic Baby Spinach, 1 lb",
+      "brand": null,
+      "retailer": "costco",
+      "price": 5.34,
+      "size": "1 lb",
+      "quantity": 5
+    },
+    {
+      "id": "73",
+      "name": "Green Giant Veggie Spirals Zucchini, Frozen Vegetables",
+      "brand": "green giant",
+      "retailer": "stop-shop",
+      "price": 4.99,
+      "size": "12 oz",
+      "quantity": 4
+    },
+    {
+      "id": "78",
+      "name": "Pompeian Early Harvest Extra Virgin Olive Oil, 68 fl oz",
+      "brand": "pompeian",
+      "retailer": "costco",
+      "price": 19.89,
+      "size": "68 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "88",
+      "name": "Francesco Rinaldi Marinara Sauce",
+      "brand": "francesco rinaldi",
+      "retailer": "stop-shop",
+      "price": 2.79,
+      "size": "24 oz",
+      "quantity": 7
+    },
+    {
+      "id": "89",
+      "name": "Store Brand Ricotta Cheese",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 3.99,
+      "size": "15 oz",
+      "quantity": 1
+    },
+    {
+      "id": "105",
+      "name": "Store Brand Lasagna",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 2.39,
+      "size": "16 oz",
+      "quantity": 48
+    },
+    {
+      "id": "118",
+      "name": "Kraft Grated Parmesan Cheese, 24 oz",
+      "brand": "kraft",
+      "retailer": "costco",
+      "price": 11.93,
+      "size": "24 oz",
+      "quantity": 2
+    },
+    {
+      "id": "123",
+      "name": "Galbani Whole Milk Ricotta Cheese",
+      "brand": "galbani",
+      "retailer": "stop-shop",
+      "price": 7.99,
+      "size": "32 oz",
+      "quantity": 1
+    },
+    {
+      "id": "132",
+      "name": "Pompeian Balsamic Vinegar",
+      "brand": "pompeian",
+      "retailer": "costco",
+      "price": 5.99,
+      "size": "16 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "142",
+      "name": "Spice Classics® Basil Leaves",
+      "brand": "spice classics®",
+      "retailer": "market-basket",
+      "price": 1.49,
+      "size": "0.75 oz",
+      "quantity": 7
+    },
+    {
+      "id": "152",
+      "name": "Kirkland Signature Salted Sweet Cream Butter, 16 oz, 4-count",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 10.56,
+      "size": "16 oz",
+      "quantity": 1
+    },
+    {
+      "id": "156",
+      "name": "Italian Parsley",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 1.59,
+      "size": "1 lb",
+      "quantity": 5
+    },
+    {
+      "id": "168",
+      "name": "Store Brand Ziti",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.19,
+      "size": "16 oz",
+      "quantity": 4
+    },
+    {
+      "id": "169",
+      "name": "Store Brand Sausage Sweet Italian",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 4.99,
+      "size": "16 oz",
+      "quantity": 5
+    },
+    {
+      "id": "178",
+      "name": "Polly-O Mozzarella String Cheese Individually Wrapped, 48-count",
+      "brand": "polly-o",
+      "retailer": "costco",
+      "price": 9.94,
+      "size": "each",
+      "quantity": 4
+    },
+    {
+      "id": "181",
+      "name": "Store Brand Sourdough Pizza Dough",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 2.99,
+      "size": "16 oz",
+      "quantity": 4
+    },
+    {
+      "id": "183",
+      "name": "Kirkland Signature Reduced Sodium Dry Salame, 16 oz, 2-count",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 13.67,
+      "size": "16 oz",
+      "quantity": 1
+    },
+    {
+      "id": "185",
+      "name": "Roma Tomato",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 0.54,
+      "size": "1 lb",
+      "quantity": 3
+    },
+    {
+      "id": "193",
+      "name": "Store Brand Ripe Olives, Pitted, Medium",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 2.79,
+      "size": "6 oz",
+      "quantity": 1
+    },
+    {
+      "id": "194",
+      "name": "Store Brand Italian Dressing",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 2.39,
+      "size": "16 fl oz",
+      "quantity": 1
+    },
+    {
+      "id": "201",
+      "name": "Taylor Farms Sweet Kale Bagged Chopped Salad Kit, 14 oz, 2-count",
+      "brand": null,
+      "retailer": "costco",
+      "price": 6.21,
+      "size": "14 oz",
+      "quantity": 10
+    }
+  ]
+}

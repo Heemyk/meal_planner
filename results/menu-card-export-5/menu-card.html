@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Menu Card</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; background: hsl(45 22% 96%); }
+    .menu { max-width: 420px; margin: 0 auto; }
+    .menu-title { font-size: 1.1rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(0,0,0,0.85); }
+    .menu-rule { height: 1px; width: 48px; background: rgba(0,0,0,0.15); margin: 8px 0 16px 0; }
+    .dish { display: flex; gap: 8px; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; }
+    .dish-accent { width: 2px; border-radius: 999px; flex-shrink: 0; }
+    .dish-content { flex: 1; min-width: 0; }
+    .dish-name { font-weight: 500; font-size: 13px; color: rgba(0,0,0,0.9); margin-bottom: 4px; }
+    .dish-desc { font-size: 10px; line-height: 1.4; color: rgba(0,0,0,0.6); white-space: pre-wrap; word-break: break-word; }
+    .allergens { font-size: 9px; color: rgba(180,83,9,0.9); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="menu">
+    <h1 class="menu-title">Menu</h1>
+    <div class="menu-rule"></div>
+    
+  <div class="dish" style="background-color:hsl(340 55% 65% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(340 60% 55%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Grilled Salmon with Dill Sauce</div>
+      <div class="dish-desc">Savor the essence of summer with our Grilled Salmon, perfectly charred and drizzled with a zesty dill sauce. Served with a side of fresh lemon wedges, this dish promises a burst of vibrant flavors that celebrate the Mediterranean spirit.</div>
+      <p class="allergens">Contains: fish, milk</p>
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(150 30% 50% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(150 30% 40%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Cucumber Dill Salad</div>
+      <div class="dish-desc">Refreshingly crisp, our Cucumber Dill Salad features thinly sliced cucumbers and red onions tossed in a creamy dill dressing, bringing a burst of vibrant Mediterranean flavors to your table. Perfectly light and zesty, it's the ideal accompaniment for a sun-soaked dinner party.</div>
+      <p class="allergens">Contains: milk</p>
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(48 90% 60% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(48 95% 50%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Lemon Rice Pilaf</div>
+      <div class="dish-desc">A fragrant blend of basmati rice infused with zesty lemon and sautéed onions, this Lemon Rice Pilaf is a refreshing side that brings a burst of Mediterranean sunshine to your dinner table. Light, vibrant, and perfectly seasoned, it’s the ideal complement to any summer feast.</div>
+      <p class="allergens">Contains: milk</p>
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(36 90% 55% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(36 90% 45%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Greek Chicken Kebabs</div>
+      <div class="dish-desc">Savor the essence of summer with our Greek Chicken Kebabs, marinated in zesty lemon and fragrant oregano. Grilled to perfection, these tender bites are a celebration of fresh Mediterranean flavors, perfect for your next gathering.</div>
+      
+    </div>
+  </div>
+
+  <div class="dish" style="background-color:hsl(150 30% 50% / 0.08)">
+    <div class="dish-accent" style="background-color:hsl(150 30% 40%)"></div>
+    <div class="dish-content">
+      <div class="dish-name">Tzatziki Sauce</div>
+      <div class="dish-desc">Cool and creamy, our Tzatziki Sauce blends velvety Greek yogurt with refreshing cucumber, zesty lemon, and fragrant dill for a vibrant dip that embodies the essence of summer. Perfect for pairing with grilled meats or fresh veggies, it’s a delightful addition to any relaxed gathering.</div>
+      
+    </div>
+  </div>
+  </div>
+</body>
+</html>

@@ -11,6 +11,10 @@ logger = get_logger(__name__)
 def infer_meal_type(name: str, instructions: str = "") -> str:
     """Infer meal_type from recipe name and instructions. Default: entree."""
     combined = f"{name} {instructions}".lower()
+    name_lower = name.lower()
+    # Savory main dishes first (curry, stir-fry, etc. are entrees, not desserts)
+    if any(k in name_lower for k in ["curry", "chicken", "beef", "pork", "lamb", "fish", "shrimp", "tofu", "stir fry", "stir-fry", "tacos", "quesadilla"]):
+        return "entree"
     if any(k in combined for k in ["dessert", "cake", "pie", "cookie", "ice cream", "pudding", "tart", "sorbet"]):
         return "dessert"
     if any(k in combined for k in ["salad", "soup", "dip", "appetizer", "appetiser", "starter", "hors d", "bruschetta"]):

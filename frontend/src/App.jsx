@@ -8,6 +8,7 @@ import {
   getRecipes,
   getLocation,
   generateMaterials,
+  clearAllData,
 } from "./api.js";
 import { logger } from "./logger.js";
 import { AppBackground } from "./components/AppBackground.jsx";
@@ -68,6 +69,7 @@ export default function App() {
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [search, setSearch] = useState("");
   const [activeMealFilter, setActiveMealFilter] = useState("all");
+  const [clearing, setClearing] = useState(false);
 
   const filteredRecipes = recipes.filter((r) => {
     const matchesSearch = !search.trim() || (r.name || "").toLowerCase().includes(search.toLowerCase());
@@ -213,6 +215,7 @@ export default function App() {
         excludeAllergens: excludeAllergens.length ? excludeAllergens : undefined,
       });
       setPlanResult(result);
+      setMaterialsData(null);
       setExpandedInstructions(-1);
     } catch (err) {
       uiLogger.error("plan.failed", err);
@@ -279,6 +282,34 @@ export default function App() {
               Using for SKU pricing
             </span>
           )}
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm("Clear all recipes, ingredients, SKUs, and plans? This cannot be undone."))
+                return;
+              setClearing(true);
+              try {
+                await clearAllData();
+                setFiles([]);
+                setPlanResult(null);
+                setIngredients([]);
+                setRecipes([]);
+                setFileProgress([]);
+                setStreamComplete(false);
+                setMaterialsData(null);
+                setMaterialsEditorOpen(false);
+                setError(null);
+              } catch (err) {
+                setError(err?.message || "Clear failed");
+              } finally {
+                setClearing(false);
+              }
+            }}
+            disabled={clearing}
+            className="ml-auto rounded-lg border border-destructive/50 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {clearing ? "Clearing…" : "Clear All"}
+          </button>
         </motion.div>
 
         {/* Hero */}
@@ -866,13 +897,16 @@ export default function App() {
                     <div className="space-y-3">
                       {planResult.menu_card.map((dish, i) => {
                         const mealType = dish?.meal_type || "entree";
-                        const theme = MENU_THEME_STYLES[mealType] || MENU_THEME_STYLES.entree;
+                        const materialsDish = materialsData?.[i]?.name === dish?.name ? materialsData[i] : null;
+                        const theme = materialsDish?.background_color
+                          ? { accentBg: materialsDish.background_color, borderColor: materialsDish.border_color || "hsl(0 0% 80%)" }
+                          : MENU_THEME_STYLES[mealType] || MENU_THEME_STYLES.entree;
                         const instructions = (dish.instructions || "").trim();
                         return (
                           <div
                             key={i}
-                            className="rounded-lg border border-border px-3 py-3"
-                            style={{ backgroundColor: theme.accentBg }}
+                            className="rounded-lg border px-3 py-3"
+                            style={{ backgroundColor: theme.accentBg, borderColor: theme.borderColor, borderWidth: "1px" }}
                           >
                             <div className="font-display font-medium text-foreground text-sm tracking-wide mb-2">{dish.name}</div>
                             <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{instructions || "—"}</p>
@@ -940,6 +974,8 @@ export default function App() {
         />
         <MenuCardEditor
           menuCard={materialsData}
+          shoppingList={planResult?.consolidated_shopping_list ?? []}
+          itemsToPurchase={planResult?.sku_details ?? {}}
           open={materialsEditorOpen}
           onClose={() => setMaterialsEditorOpen(false)}
         />

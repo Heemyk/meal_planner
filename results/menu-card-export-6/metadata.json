@@ -1,0 +1,213 @@
+{
+  "resolution_dpi": 300,
+  "bleed": "3mm",
+  "paper_stock": "Matte 120gsm",
+  "paper_size": "A4",
+  "finishes": "None",
+  "menu_card": [
+    {
+      "name": "Beef Stroganoff",
+      "meal_type": "entree",
+      "description": "Indulge in our Beef Stroganoff, where tender strips of beef sirloin are sautéed with earthy mushrooms and aromatic garlic, all enveloped in a creamy, savory sauce. Served over a bed of comforting noodles, this dish brings the warmth of home-cooked love to your table.",
+      "allergens": [
+        "milk",
+        "wheat"
+      ]
+    },
+    {
+      "name": "Buttered Egg Noodles",
+      "meal_type": "entree",
+      "description": "Indulge in our buttery egg noodles, perfectly cooked and tossed with rich butter and a sprinkle of fresh parsley. This comforting dish brings the warmth of home to your table, making every bite a delightful reminder of family gatherings.",
+      "allergens": [
+        "eggs",
+        "milk"
+      ]
+    },
+    {
+      "name": "Green Bean Almondine",
+      "meal_type": "entree",
+      "description": "Savor the delightful crunch of tender green beans, elegantly sautéed in butter and tossed with toasted almonds and a hint of garlic. This comforting dish brings a touch of warmth to your table, perfect for sharing with loved ones.",
+      "allergens": [
+        "milk",
+        "tree_nuts"
+      ]
+    }
+  ],
+  "shopping_list": [
+    {
+      "ingredient": "beef sirloin",
+      "quantity": 1360.77,
+      "unit": "g"
+    },
+    {
+      "ingredient": "onion",
+      "quantity": 3,
+      "unit": "count"
+    },
+    {
+      "ingredient": "garlic",
+      "quantity": 11,
+      "unit": "count"
+    },
+    {
+      "ingredient": "mushroom",
+      "quantity": 680.4,
+      "unit": "g"
+    },
+    {
+      "ingredient": "beef broth",
+      "quantity": 720,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "sour cream",
+      "quantity": 720,
+      "unit": "ml"
+    },
+    {
+      "ingredient": "flour",
+      "quantity": 90,
+      "unit": "g"
+    },
+    {
+      "ingredient": "butter",
+      "quantity": 336,
+      "unit": "g"
+    },
+    {
+      "ingredient": "salt",
+      "quantity": 0,
+      "unit": "tsp"
+    },
+    {
+      "ingredient": "egg noodle",
+      "quantity": 680.38,
+      "unit": "g"
+    },
+    {
+      "ingredient": "parsley",
+      "quantity": 4,
+      "unit": "tbsp"
+    },
+    {
+      "ingredient": "green bean",
+      "quantity": 11.35,
+      "unit": "count"
+    },
+    {
+      "ingredient": "almond",
+      "quantity": 141.75,
+      "unit": "g"
+    }
+  ],
+  "items_to_purchase": [
+    {
+      "id": "2",
+      "name": "Kirkland Signature Salted Sweet Cream Butter, 16 oz, 4-count",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 10.56,
+      "size": "16 oz",
+      "quantity": 1
+    },
+    {
+      "id": "6",
+      "name": "Colossal Garlic, 2 lbs",
+      "brand": "christopher ranch",
+      "retailer": "costco",
+      "price": 8.2,
+      "size": "2 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "13",
+      "name": "Store Brand Grade A Sour Cream",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 2.79,
+      "size": "16 oz",
+      "quantity": 2
+    },
+    {
+      "id": "18",
+      "name": "Yellow Onion",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 0.92,
+      "size": "1 each",
+      "quantity": 3
+    },
+    {
+      "id": "33",
+      "name": "Premium Large White Mushrooms, 24 oz",
+      "brand": "monterey mushrooms",
+      "retailer": "costco",
+      "price": 6.83,
+      "size": "24 oz",
+      "quantity": 2
+    },
+    {
+      "id": "37",
+      "name": "Fresh Additions Sirloin Steak Bites, 3.2 oz, 6-count",
+      "brand": "fresh additions",
+      "retailer": "costco",
+      "price": 23.62,
+      "size": "3.2 oz",
+      "quantity": 15
+    },
+    {
+      "id": "40",
+      "name": "King Arthur Baking Company Unbleached Bread Flour, 12 lbs",
+      "brand": "king arthur baking company",
+      "retailer": "costco",
+      "price": 12.43,
+      "size": "12 lb",
+      "quantity": 1
+    },
+    {
+      "id": "42",
+      "name": "Store Brand Beef Broth",
+      "brand": "store brand",
+      "retailer": "stop-shop",
+      "price": 1.99,
+      "size": "32 oz",
+      "quantity": 1
+    },
+    {
+      "id": "57",
+      "name": "Italian Parsley",
+      "brand": null,
+      "retailer": "stop-shop",
+      "price": 1.59,
+      "size": "1 lb",
+      "quantity": 1
+    },
+    {
+      "id": "60",
+      "name": "Organic Green Beans, 2 lbs",
+      "brand": "green wve farms, llc.",
+      "retailer": "costco",
+      "price": 9.94,
+      "size": "2 lbs",
+      "quantity": 1
+    },
+    {
+      "id": "64",
+      "name": "Kirkland Signature Creamy Almond Butter, 27 oz",
+      "brand": "kirkland signature",
+      "retailer": "costco",
+      "price": 10.44,
+      "size": "27 oz",
+      "quantity": 1
+    },
+    {
+      "id": "65",
+      "name": "Light 'n Fluffy Extra Wide Enriched Egg Noodles",
+      "brand": "light 'n fluffy",
+      "retailer": "stop-shop",
+      "price": 2.99,
+      "size": "12 oz",
+      "quantity": 2
+    }
+  ]
+}
