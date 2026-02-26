@@ -1,0 +1,56 @@
+import re
+from dataclasses import dataclass
+from typing import List
+
+from app.logging import get_logger
+
+logger = get_logger(__name__)
+
+@dataclass
+class ParsedRecipe:
+    name: str
+    servings: int
+    ingredients: List[str]
+    instructions: str
+
+
+def _parse_title(line: str) -> tuple[str, int]:
+    match = re.match(r"^(.*)\(for\s+(\d+)\s+people\)\s*$", line.strip(), re.IGNORECASE)
+    if match:
+        return match.group(1).strip(), int(match.group(2))
+    return line.strip(), 1
+
+
+def parse_recipe_text(text: str) -> List[ParsedRecipe]:
+    sections = [s.strip() for s in text.split("---") if s.strip()]
+    recipes: List[ParsedRecipe] = []
+    logger.info("parser.start sections=%s", len(sections))
+    for section in sections:
+        lines = [line.rstrip() for line in section.splitlines() if line.strip()]
+        if not lines:
+            continue
+        name, servings = _parse_title(lines[0])
+        ingredients: List[str] = []
+        instructions_lines: List[str] = []
+        mode = None
+        for line in lines[1:]:
+            if line.lower().startswith("ingredients"):
+                mode = "ingredients"
+                continue
+            if line.lower().startswith("instructions"):
+                mode = "instructions"
+                continue
+            if mode == "ingredients" and line.startswith("-"):
+                ingredients.append(line.lstrip("-").strip())
+            elif mode == "instructions":
+                instructions_lines.append(line.strip())
+        recipes.append(
+            ParsedRecipe(
+                name=name,
+                servings=servings,
+                ingredients=ingredients,
+                instructions=" ".join(instructions_lines).strip(),
+            )
+        )
+    logger.info("parser.end recipes=%s", len(recipes))
+    return recipes

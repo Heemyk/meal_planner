@@ -1,0 +1,495 @@
+I am planning out my system architecture, solution strategy and steps for an engineering takehome that I received. This is the takehome below, and I have attached an example recipe for reference. There are several moving parts within this system that I need to flesh out.
+
+The core problem:
+I am representing the problem of picking recipes an ILP problem. The goal is to find the cheapest combination of recipes to feed N people. This is my raw problem representation and solution
+
+1. System Recap & Problem Definition
+We are solving a variation of the Diet Problem combined with a Multiple-Choice Knapsack Problem.
+The Goal: Find the absolute cheapest combination of recipes to feed $N$ people.
+The Constraints: 1. Ingredients are not purchased continuously; they are bought in discrete, multi-tiered batches (e.g., 1 for $2, 5 for $5, 20 for $17).
+2. The algorithm must inherently favor "recipe synergy"—choosing recipes that share ingredients to consume the "wasted" remainders of bulk ingredient purchases.
+
+2. Object-Oriented Programming (OOP) Schema
+This structure defines the entities in your application memory before they are passed to the solver.
+Ingredient: The canonical representation of a food item (e.g., "Tomato").
+PurchaseOption: Represents a specific SKU (Stock Keeping Unit).
+Attributes: sku_id, quantity, price.
+RecipeRequirement: The directed edge between a Recipe and an Ingredient.
+Attributes: quantity_needed.
+Recipe: The core meal unit.
+Attributes: recipe_id, servings_yielded, requirements (List of RecipeRequirement).
+
+3. The Mathematical Framing (ILP)
+To solve this optimally, we model it as an Integer Linear Program (ILP).
+Sets & Indices
+$R$: Set of all available recipes, indexed by $r$.
+$I$: Set of all unique ingredients required by the chosen recipes, indexed by $i$.
+$K_i$: Set of all purchase options (SKUs) available for a specific ingredient $i$, indexed by $k$.
+Parameters (Constants)
+$S_r$: Number of servings yielded by recipe $r$.
+$N$: Target number of total servings required.
+$Q_{i,r}$: Quantity of ingredient $i$ required to make one batch of recipe $r$.
+$B_{i,k}$: The quantity (batch size) provided by purchase option $k$ of ingredient $i$.
+$C_{i,k}$: The cost of purchase option $k$ of ingredient $i$.
+Decision Variables (What the solver figures out)
+$x_r$: The number of times to cook recipe $r$. ($x_r \in \mathbb{Z}_{\ge 0}$)
+$y_{i,k}$: The number of times to buy purchase option $k$ for ingredient $i$. ($y_{i,k} \in \mathbb{Z}_{\ge 0}$)
+The Objective Function
+Minimize the total cost of all purchased SKUs:
+$$\text{Minimize} \sum_{i \in I} \sum_{k \in K_i} C_{i,k} y_{i,k}$$
+The Constraints
+Demand Fulfillment: Total servings must meet or exceed the target.
+$$\sum_{r \in R} S_r x_r \ge N$$
+Ingredient Availability: For every ingredient $i$, the total amount bought across all SKUs must meet or exceed the total amount required by the selected recipes.
+$$\sum_{r \in R} Q_{i,r} x_r \le \sum_{k \in K_i} B_{i,k} y_{i,k} \quad \forall i \in I$$
+
+4. Complexity Analysis & Scaling the ILP
+The Complexity
+ILP is NP-Hard. The time complexity scales exponentially in the worst case with the number of integer variables.
+Number of variables = $|R| + \sum |K_i|$.
+The solver uses Branch-and-Bound. If you feed it 10,000 recipes and 50,000 SKUs, the search tree becomes too massive to solve in a reasonable timeframe.
+How to Keep the ILP Efficient (Scaling Strategies)
+To scale, you must reduce the size of $R$ and $I$ before hitting the solver.
+Graph-Based Sub-setting (Clustering): Do not run the solver on the whole database. Use graph algorithms to find clusters of recipes that share ingredients heavily. Run the solver only on one "cluster" at a time (e.g., Italian cuisine cluster, Asian cuisine cluster) and compare the final objective values.
+Hard Pruning: Filter out recipes that are mathematically non-viable early on. E.g., if a recipe's minimum possible cost per serving exceeds a user-defined threshold, drop it from $R$.
+Solver Time Limits & Heuristics: Modern solvers (like Gurobi or CBC) accept a time_limit parameter. They will return the best integer solution found within that limit (the incumbent), even if they haven't proven it is the absolute global minimum.
+Warm Starting: Use a greedy algorithm (e.g., pick the best $/serving recipe and buy bulk) to find a "pretty good" solution instantly. Feed this solution to the ILP solver as an initial bound. This prunes massive branches of the search tree immediately.
+
+5. Graph Database Schema & Tech Stack
+Because your data is highly interconnected, a Graph Database is vastly superior to a relational database for the pre-processing steps.
+Database: Neo4j (Industry standard, highly optimized for traversing relationships).
+Query Language: Cypher.
+Integration: Use the neo4j Python driver to pull subgraphs into your application, construct the OOP models, and pass them to PuLP or Google OR-Tools.
+Graph Schema
+Nodes: (:Recipe), (:Ingredient), (:PurchaseOption)
+Edges: * (:Recipe)-[:REQUIRES {qty: Float}]->(:Ingredient)
+(:Ingredient)-[:SOLD_AS]->(:PurchaseOption)
+Sample Cypher Queries
+1. Finding Highly Synergistic Recipes (Pre-filtering)
+This query finds recipes that share at least 3 ingredients with a specific target recipe, ranking them by overlap.
+Cypher
+MATCH (target:Recipe {name: "Beef Stew"})-[:REQUIRES]->(shared:Ingredient)<-[:REQUIRES]-(other:Recipe)
+WITH other, count(shared) as shared_count
+WHERE shared_count >= 3
+RETURN other.name, shared_count
+ORDER BY shared_count DESC
+
+
+2. Fetching the Subgraph for the Solver
+Once you have a list of recipe IDs you want to consider, pull all relevant ingredients and purchase options in one go:
+Cypher
+MATCH (r:Recipe)-[req:REQUIRES]->(i:Ingredient)-[:SOLD_AS]->(p:PurchaseOption)
+WHERE r.id IN $selected_recipe_ids
+RETURN r.id AS recipe, r.servings AS servings, 
+       req.qty AS qty_needed, i.id AS ingredient, 
+       p.qty AS sku_qty, p.price AS sku_price
+
+
+
+6. End-to-End Pseudocode
+Python
+def optimize_meal_plan(target_servings, user_preferences):
+    # 1. Pre-Processing (Graph Layer)
+    # Don't grab the whole DB. Grab a synergistic cluster.
+    candidate_recipes = graph_db.execute(
+        "MATCH (r:Recipe) WHERE r.tags IN $prefs RETURN r LIMIT 50"
+    )
+    
+    # Fetch exact subgraph for these candidates
+    subgraph_data = graph_db.fetch_subgraph(candidate_recipes)
+    
+    # 2. Map to OOP
+    recipes, ingredients_market = map_to_oop_models(subgraph_data)
+    
+    # 3. Build ILP Model
+    model = ILPSolver(minimize=True)
+    
+    # Initialize variables
+    x = model.add_integer_vars(recipes, min_val=0)
+    y = model.add_integer_vars(ingredients_market.skus, min_val=0)
+    
+    # Constraint 1: Target Servings
+    model.add_constraint( sum(x[r] * r.servings) >= target_servings )
+    
+    # Constraint 2: Demand <= Supply for every ingredient
+    for ing in ingredients_market:
+        demand = sum(x[r] * r.get_req(ing) for r in recipes)
+        supply = sum(y[sku] * sku.qty for sku in ing.skus)
+        model.add_constraint( demand <= supply )
+        
+    # Objective: Minimize cost
+    model.set_objective( sum(y[sku] * sku.price for sku in ingredients_market.skus) )
+    
+    # 4. Solve with limits to maintain performance
+    model.solve(time_limit_seconds=10)
+    
+    # 5. Parse output
+    return parse_results(x, y)
+
+
+Now, there are several steps that are needed for this core representation to work. Firstly, we need an intake system, that allows for the drag and drop of txt files representing recipes, and converts them into a Recipe class instance. The .txt files are structured, which is helpful. See the example of a .txt file at the end
+
+These need to be parsed. However, whilst recipe id, servings yielded and the text block of instructions for each recipe are structured, other parts are unstructured, specifically the ingredient and amount. For each bullet point, we need to 1) compare with existing ingredients, and decide if we need to initialise a new ingredient, or if it matches one of the existing ingredient groups (e.g. if there were already ingredient groups of eggs and penne pasta, then 10 eggs would match a preexisting ingredient group eggs, but oranges would not, so we would have to make a new one. Additionally, for something like penne pasta, so this could maybe match an existing ingredient group of pasta, or not, so there is a decision branching, where either a substitution can be made (replace penne pasta for pasta), or a new ignredient group can be made for penne pasta specifically) ). This comparison to preexisting groups should be done to an llm, and if it is new, then it gets added, if it is the same, then the existing ingredient group is used, or if it is similar, this should trigger a longer chain of though reasoning workflow which goes to consider different factors e.g. how important is the specificity of this ingredient, would the recipe function without it (would be passed the instructions for this), is it worth the money for the specific ingredient).  And then 2) we need to decide what the actual volume is for the base unit of the ingredient. Note this should exist for every ingredient and is different to the SKUs. So the SKUs might be a pint, 2 pints, 2 litres for milk for example. But we still need a base unit that we can represent milk in so if we need for example half a pint of milk for a recipe, or 500ml of milk for another, we represent all of these in say ml so we can do the conversions into SKUs easily when we run the optimisation This should also be done by an llm, with some ontology that provides information on common conversion types, possible usable base amounts, so that this is reliable.
+
+We also need a way of getting the SKUs ie prices for all the different ingredients. For each new ingredient addition event, we want to query our instacart scraper to give us prices from stores local to the user for our specific ingredient, doing a search products call. We then want to get teh top 5 results, use a small llm filter to validate our search results actually make sense given our search query, and then add these as the skus for the given ingredient. See the instacart api doc reference to get more information on the return types. This should be done as a background job, asynchronously, ie sku initialsiation jobs get pushed to a queue where they get handled by workers (a recipe upload event would result in some job pushes to the sku queue if there were new ingredients (ie an ingredient addition event) for example). After being handled, skus should be stored in a database, but like a cache with a ttl of 1 day, as prices change every day. Make sure the workers respect rate limits of the api.
+
+
+All of this is essentially preprocessing. Once ready, then when the user needs to get a plan, they input the number of people, and execute, and the optimisation runs in the aforementioned algorithm. After the combination of recipes is picked, then we do some postprocessing steps to get the descriptions for the second part of the brief etc.
+
+Example recipe txt file (note there are often multiple recipes in one txt):
+Lemon Herb Roasted Chicken (for 4 people)
+
+Ingredients:
+- 1 whole chicken (approximately 4 pounds)
+- 1/4 cup olive oil
+- 2 lemons, sliced
+- 4 cloves garlic, minced
+- 2 tablespoons fresh rosemary, chopped
+- 1 tablespoon fresh thyme leaves
+- Salt and pepper to taste
+
+Instructions:
+Preheat the oven to 375°F (190°C). Place the chicken in a roasting pan. In a bowl, mix olive oil, minced garlic, rosemary, thyme, salt, and pepper. Rub the mixture all over the chicken, including under the skin. Stuff the cavity with lemon slices. Roast for about 1.5 hours, or until the internal temperature reaches 165°F (74°C). Let rest for 10 minutes before carving.
+
+---
+
+Garlic Mashed Potatoes (for 6 people)
+
+Ingredients:
+- 2 pounds russet potatoes, peeled and cubed
+- 1/2 cup heavy cream
+- 4 tablespoons unsalted butter
+- 3 cloves garlic, minced
+- Salt and pepper to taste
+
+Instructions:
+Boil the potatoes in salted water until tender, about 15–20 minutes. Drain and return to the pot. In a saucepan, heat heavy cream, butter, and minced garlic until warm. Mash the potatoes, gradually adding the cream mixture until smooth. Season with salt and pepper.
+
+---
+
+Steamed Asparagus with Lemon Butter (for 2 people)
+
+Ingredients:
+- 1 pound asparagus, trimmed
+- 2 tablespoons unsalted butter
+- 1 tablespoon lemon juice
+- Salt and pepper to taste
+
+Instructions:
+Steam the asparagus until tender-crisp, about 5 minutes. In a small saucepan, melt the butter and stir in lemon juice. Drizzle over the steamed asparagus. Season with salt and pepper.
+
+
+
+Takehome Decription:
+Interview Question: Recipe Aggregation and Menu Creation
+Overview
+In this exercise, we’ll build an AI system to help throw a dinner party. Given a set of recipes and
+a variable number of guests, your system should return a shopping list and a menu card for the
+dinner.
+We’ve provided:
+● Several sample recipe collections, for testing. Each set contains several plain text
+recipes. Your system should be able to handle any number of recipes provided (e.g. sets
+including hundreds of recipes).
+● An OpenAI API key with a $10 credit, if helpful. You’re welcome to use any providers and
+models that you choose – we recommend starting experimentation with a small model.
+Please don’t spend more than 4 hours on this project. We’ll schedule a live project walkthrough
+after to present and discuss your solution.
+Outputs
+For each recipe set, your system should return a:
+1. Consolidated Shopping List containing all the ingredients from the provided recipes.
+○ Each recipe should scale based on the number of guests.
+○ Ingredients should be consolidated where possible (e.g., if multiple recipes use
+garlic, it should be a single line item on the list).
+○ Functionally equivalent ingredients (like olive oil and vegetable oil) can be
+combined if appropriate.
+○ Ingredients should use consistent measurement, including conversion to ounces
+(weight) or fluid ounces (volume) where relevant.
+2. Menu Card that can be presented to the dinner guests, including:
+○ The name of each dish
+○ A list of ingredients
+○ A short description of each dish in a consistent and coherent style
+Please submit in one zipped folder:
+● All code used to complete the project
+● The result from running your system on each of the provided recipe sets
+● A 1-page summary of your approach. Include any experimentation you did (e.g.
+prompting strategies, methodologies) as well as any future work that could improve the
+results.
+There are no requirements for how you want to structure or present the system.
+Project Evaluation
+You’ll be evaluated on:
+1. Quality of your code
+2. Correctness of outputs
+3. Your approach to system design
+Beyond the core requirements, here are some ideas to extend the system:
+● Keep in mind what would be useful for a shopping list – for example, instead of “1 tbsp
+minced garlic”, returning “3 cloves garlic”.
+● Build the list in a way that minimizes overall cost
+● Account for and suggest ingredient substitutions
+● Present allergens on the menu card
+If you have questions while working, feel free to email engineering@withtandem.com .
+
+
+API spec for scraped instacart - I used a yc company's website -> api builder to give me some endpoints for searching what sotres are nearby, and searching a particular store. The copied api spec is attached.
+:
+
+
+# instacart.com API
+Search for grocery products across multiple retailers, view store locations and availability, and access detailed product information including prices and descriptions. Find the best deals and nearest stores offering the items you need.
+
+Base URL: `https://api.parse.bot/scraper/fe062683-8089-4dd2-98b2-48603e6795f8`
+
+---
+
+## GET `get_stores`
+
+Get available stores for a specific postal code.
+
+```
+GET https://api.parse.bot/scraper/fe062683-8089-4dd2-98b2-48603e6795f8/get_stores
+```
+
+### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `postal_code` | string | Yes | Postal code to search for stores in |
+
+| Name | Location | Description |
+|------|----------|-------------|
+| `X-API-Key` | header | Your API key (required) |
+
+### Response
+
+```json
+{
+  "data": {
+    "stores": [
+      {
+        "name": "Costco",
+        "slug": "costco",
+        "type": "Club/Warehouse Store",
+        "pickup": false,
+        "shop_id": "968",
+        "delivery": true,
+        "logo_url": "https://www.instacart.com/assets/domains/warehouse/logo/5/65f2304b-908e-4cd0-981d-0d4e4effa8de.png",
+        "categories": [
+          "Groceries",
+          "Wholesale"
+        ],
+        "retailer_id": "5",
+        "retailer_location_id": "284"
+      },
+      {
+        "name": "Key Food",
+        "slug": "key-food",
+        "type": "Grocery - Value",
+        "pickup": false,
+        "shop_id": "595543",
+        "delivery": true,
+        "logo_url": "https://www.instacart.com/assets/domains/warehouse/logo/39/0d4e9ee3-1686-4711-8da3-b6f26da6019f.png",
+        "categories": [
+          "Groceries",
+          "Organic",
+          "Specialty"
+        ],
+        "retailer_id": "39",
+        "retailer_location_id": "1962"
+      },
+      {
+        "name": "Key Food",
+        "slug": "key-food",
+        "type": "Grocery - Value",
+        "pickup": true,
+        "shop_id": "595574",
+        "delivery": false,
+        "logo_url": "https://www.instacart.com/assets/domains/warehouse/logo/39/0d4e9ee3-1686-4711-8da3-b6f26da6019f.png",
+        "categories": [
+          "Groceries",
+          "Organic",
+          "Specialty"
+        ],
+        "retailer_id": "39",
+        "retailer_location_id": "2572"
+      }
+    ],
+    "postal_code": "10001"
+  },
+  "status": "success"
+}
+```
+
+---
+
+## GET `search_products`
+
+Search for products within a specific retailer.
+
+```
+GET https://api.parse.bot/scraper/fe062683-8089-4dd2-98b2-48603e6795f8/search_products
+```
+
+### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `limit` | integer | No | Maximum number of products to return |
+| `query` | string | Yes | Search query for products |
+| `postal_code` | string | Yes | Postal code for store location |
+| `retailer_slug` | string | Yes | Retailer identifier slug |
+
+| Name | Location | Description |
+|------|----------|-------------|
+| `X-API-Key` | header | Your API key (required) |
+
+### Response
+
+```json
+{
+  "data": {
+    "query": "coca cola",
+    "products": [
+      {
+        "id": "items_1944-32020",
+        "name": "Pepsi, 12 fl oz, 36-count",
+        "size": "12 fl oz",
+        "brand": "pepsi",
+        "price": "$23.62",
+        "rating": 96,
+        "available": true,
+        "image_url": "https://d2lnr5mha7bycj.cloudfront.net/product-image/file/large_994a5bfe-2987-4b3f-bf7a-27161f8486c3.jpeg",
+        "categories": null,
+        "product_id": "32020",
+        "is_sponsored": true,
+        "rating_count": 45,
+        "stock_status": "highlyInStock",
+        "price_per_unit": "$0.66 each"
+      },
+      {
+        "id": "items_1944-154860",
+        "name": "Lipton Brisk Iced Tea, Lemon, 12 fl oz, 36-count",
+        "size": "12 fl oz",
+        "brand": "pepsi cola of n.y. inc",
+        "price": "$23.50",
+        "rating": null,
+        "available": true,
+        "image_url": "https://d2lnr5mha7bycj.cloudfront.net/product-image/file/large_1ca24622-b571-4f28-b6b8-862d3e0b8ca8.jpeg",
+        "categories": null,
+        "product_id": "154860",
+        "is_sponsored": true,
+        "rating_count": null,
+        "stock_status": "highlyInStock",
+        "price_per_unit": "$0.05/fl oz"
+      },
+      {
+        "id": "items_1944-3223424",
+        "name": "Starbucks Frappuccino, Mocha Chilled Coffee, 9.5 fl oz, 15-count",
+        "size": "9.5 fl oz",
+        "brand": "starbucks",
+        "price": "$27.36",
+        "rating": 94,
+        "available": true,
+        "image_url": "https://d2lnr5mha7bycj.cloudfront.net/product-image/file/large_461c5cf1-2785-4b4c-a101-ab80cdcedfb7.jpeg",
+        "categories": null,
+        "product_id": "3223424",
+        "is_sponsored": true,
+        "rating_count": 29,
+        "stock_status": "highlyInStock",
+        "price_per_unit": "$1.82 each"
+      }
+    ],
+    "retailer": "costco",
+    "postal_code": "10001"
+  },
+  "status": "success"
+}
+```
+
+---
+
+## GET `get_product_details`
+
+Get detailed information for a specific product.
+
+```
+GET https://api.parse.bot/scraper/fe062683-8089-4dd2-98b2-48603e6795f8/get_product_details
+```
+
+### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `item_id` | string | Yes | Unique item identifier |
+| `shop_id` | string | Yes | Shop identifier |
+| `postal_code` | string | Yes | Postal code for location |
+
+| Name | Location | Description |
+|------|----------|-------------|
+| `X-API-Key` | header | Your API key (required) |
+
+### Response
+
+```json
+{
+  "id": "123",
+  "name": "Coca Cola Classic",
+  "size": "12 fl oz",
+  "brand": "Coca Cola",
+  "price": "$1.99",
+  "images": [
+    "https://example.com/product.jpg"
+  ],
+  "rating": 4.5,
+  "product_id": "456",
+  "description": "Classic cola beverage",
+  "stock_level": "in_stock",
+  "dietary_attributes": [
+    "Gluten Free"
+  ],
+  "quantity_attributes": {},
+  "nutritional_attributes": {}
+}
+```
+
+---
+
+## GET `get_store_details`
+
+Get details for a specific retailer, including name, logo, and categories.
+
+```
+GET https://api.parse.bot/scraper/fe062683-8089-4dd2-98b2-48603e6795f8/get_store_details
+```
+
+### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `postal_code` | string | Yes | Postal code for store location |
+| `retailer_slug` | string | Yes | Retailer identifier slug |
+
+| Name | Location | Description |
+|------|----------|-------------|
+| `X-API-Key` | header | Your API key (required) |
+
+### Response
+
+```json
+{
+  "data": {
+    "name": "Costco",
+    "slug": "costco",
+    "type": "Club/Warehouse Store",
+    "shop_id": "8527",
+    "logo_url": "https://www.instacart.com/assets/domains/warehouse/logo/5/65f2304b-908e-4cd0-981d-0d4e4effa8de.png",
+    "categories": [
+      "Groceries",
+      "Wholesale"
+    ],
+    "retailer_id": "5",
+    "delivery_eta": null,
+    "service_type": null
+  },
+  "status": "success"
+}
+```
+
