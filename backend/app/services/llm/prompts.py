@@ -1,6 +1,7 @@
 INGREDIENT_MATCH_PROMPT_VERSION = "v2"
 UNIT_NORMALIZE_PROMPT_VERSION = "v3"
 SKU_FILTER_PROMPT_VERSION = "v3"
+ALLERGEN_INFER_PROMPT_VERSION = "v1"
 
 INGREDIENT_MATCH_TEMPLATE = """You are matching an ingredient line to a canonical ingredient list.
 Return a decision with:
@@ -55,6 +56,19 @@ INCLUDE only when:
 - The ingredient identity is the same (not a substitute or processed variant)
 
 Return selected as a list of candidate objects (subset). If no candidates match strictly, return an empty list []."""
+
+ALLERGEN_INFER_TEMPLATE = """Given a list of ingredients for a recipe, identify which major food allergens are present.
+
+Allowed allergen codes only (return ONLY these exact strings, comma-separated):
+${allergen_ontology}
+
+Rules:
+- Be thorough: consider dairy (milk, cream, butter, cheese), eggs, wheat/flour, nuts, soy, fish, shellfish, sesame, mustard
+- Hidden allergens: flour often contains wheat; mayonnaise contains eggs; compound ingredients may contain multiple allergens
+- Return only codes from the ontology. If none apply, return an empty string or "none"
+- Be inclusive when uncertain: if an ingredient could reasonably contain an allergen (e.g. "breadcrumbs" → wheat), include it
+- Consider cross-contamination risk only for clearly stated shared-equipment cases; otherwise focus on direct ingredients
+"""
 
 UNIT_CONVERSION_ONTOLOGY = """Unit-to-unit conversions only (do not convert ingredients to weight/volume):
 - 1 tablespoon = 1 tbsp = 3 tsp = 15 ml

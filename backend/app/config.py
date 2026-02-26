@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     ingredient_match_full_context_threshold: int = 20
     ingredient_retrieval_top_k: int = 10
 
+    # Use LLM for allergen inference (more robust). If False, use keyword fallback.
+    use_llm_allergens: bool = True
+
     class Config:
         env_file = ".env"
 

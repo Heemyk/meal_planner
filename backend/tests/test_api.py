@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from sqlmodel import select
+
 from app.storage.models import Ingredient, Recipe, RecipeIngredient, SKU
 
 
@@ -78,6 +80,49 @@ def test_recipe_upload(client, monkeypatch):
     payload = response.json()
     assert payload["recipes_created"] == 3
     assert payload["ingredients_created"] > 0
+
+
+def test_recipe_upload_sets_allergens(client, monkeypatch, session):
+    """Verify allergens are computed and stored on recipe upload."""
+    monkeypatch.setattr(
+        "app.api.recipes.match_ingredient",
+        lambda ingredient_text, existing: {
+            "decision": "new",
+            "canonical_name": "milk" if "milk" in ingredient_text.lower() else "flour",
+            "rationale": "test",
+        },
+    )
+    monkeypatch.setattr(
+        "app.api.recipes.infer_allergens_from_ingredients",
+        lambda names: ["milk", "wheat"] if names else [],
+    )
+    monkeypatch.setattr(
+        "app.api.recipes.normalize_units",
+        lambda _: {"base_unit": "ml", "base_unit_qty": 1.0, "normalized_qty": 100, "normalized_unit": "ml"},
+    )
+    monkeypatch.setattr(
+        "app.api.recipes.fetch_skus_for_ingredient",
+        type("DummyTask", (), {"delay": staticmethod(lambda *_args, **_kwargs: None)}),
+    )
+    monkeypatch.setattr("app.api.recipes.upsert_recipe", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.recipes.upsert_ingredient", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.recipes.link_recipe_ingredient", lambda *args, **kwargs: None)
+
+    content = b"""Test Milk Recipe (for 2 people)
+Ingredients:
+- 100 ml milk
+- 50 g flour
+Instructions:
+Mix and cook.
+"""
+    response = client.post("/api/recipes/upload", files={"files": ("test.txt", content, "text/plain")})
+    assert response.status_code == 200
+    recipes = list(session.exec(select(Recipe)))
+    assert len(recipes) >= 1
+    r = recipes[-1]
+    assert r.allergens is not None
+    assert "milk" in r.allergens
+    assert "wheat" in r.allergens
 
 
 def test_plan_endpoint(client, session):

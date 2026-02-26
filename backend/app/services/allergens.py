@@ -1,6 +1,7 @@
 """
 Allergen ontology and meal allergen inference.
 Uses the 10 most common food allergens (US FDA / international).
+Primary: LLM-based inference. Fallback: keyword matching.
 """
 
 from app.logging import get_logger
@@ -28,9 +29,9 @@ ALLERGEN_ONTOLOGY = {
 }
 
 
-def infer_allergens_from_ingredients(ingredient_names: list[str]) -> list[str]:
+def _infer_allergens_keywords(ingredient_names: list[str]) -> list[str]:
     """
-    Given a list of ingredient names, return allergen codes present.
+    Keyword-based fallback for allergen inference.
     ingredient_names: canonical ingredient names (lowercase).
     Returns: list of allergen keys from ALLERGEN_ONTOLOGY.
     """
@@ -42,6 +43,24 @@ def infer_allergens_from_ingredients(ingredient_names: list[str]) -> list[str]:
                 found.add(allergen)
                 break
     return sorted(found)
+
+
+def infer_allergens_from_ingredients(
+    ingredient_names: list[str], use_llm: bool | None = None
+) -> list[str]:
+    """
+    Infer allergen codes from ingredient names.
+    Primary: LLM (more robust for compound/hidden allergens).
+    Fallback: keyword matching when LLM fails or use_llm=False.
+    """
+    from app.config import settings
+
+    if use_llm is None:
+        use_llm = getattr(settings, "use_llm_allergens", True)
+    if use_llm:
+        from app.services.llm.allergen_infer import infer_allergens_llm
+        return infer_allergens_llm(ingredient_names)
+    return _infer_allergens_keywords(ingredient_names)
 
 
 def get_all_allergen_codes() -> list[str]:
