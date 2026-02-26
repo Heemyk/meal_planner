@@ -6,8 +6,9 @@ import { cn } from "../lib/utils.js";
  * Card showing an ingredient and its attached SKUs, with spotlight hover effect.
  */
 export function IngredientCard({ ingredient, index = 0 }) {
-  const { name, base_unit, skus = [] } = ingredient;
+  const { name, base_unit, skus = [], sku_unavailable = false } = ingredient;
   const hasSkus = skus.length > 0;
+  const unavailable = sku_unavailable && !hasSkus;
 
   return (
     <motion.div
@@ -33,10 +34,12 @@ export function IngredientCard({ ingredient, index = 0 }) {
                 "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                 hasSkus
                   ? "bg-step-complete/20 text-step-complete"
-                  : "bg-step-pending text-muted-foreground"
+                  : unavailable
+                    ? "bg-neutral-600/30 text-neutral-400"
+                    : "bg-step-pending text-muted-foreground"
               )}
             >
-              {hasSkus ? `${skus.length} SKU${skus.length !== 1 ? "s" : ""}` : "Pending"}
+              {hasSkus ? `${skus.length} SKU${skus.length !== 1 ? "s" : ""}` : unavailable ? "Not available" : "Pending"}
             </span>
           </div>
           {hasSkus && (

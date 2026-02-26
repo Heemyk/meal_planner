@@ -79,7 +79,7 @@ def test_recipe_upload(client, monkeypatch):
     repo_root = Path(__file__).resolve().parents[2]
     file_path = repo_root / "intern-dataset-main" / "1.txt"
     with file_path.open("rb") as handle:
-        response = client.post("/api/recipes/upload", files={"files": ("1.txt", handle, "text/plain")})
+        response = client.post("/api/recipes/upload/sync", files={"files": ("1.txt", handle, "text/plain")})
     assert response.status_code == 200
     payload = response.json()
     assert payload["recipes_created"] == 3
@@ -119,7 +119,7 @@ Ingredients:
 Instructions:
 Mix and cook.
 """
-    response = client.post("/api/recipes/upload", files={"files": ("test.txt", content, "text/plain")})
+    response = client.post("/api/recipes/upload/sync", files={"files": ("test.txt", content, "text/plain")})
     assert response.status_code == 200
     recipes = list(session.exec(select(Recipe)))
     assert len(recipes) >= 1

@@ -50,7 +50,7 @@ def _expand_files(content: bytes, filename: str) -> list[tuple[bytes, str]]:
     return [(content, filename)]
 
 
-@router.post("/recipes/upload", response_model=RecipeUploadResponse)
+@router.post("/recipes/upload/sync", response_model=RecipeUploadResponse)
 async def upload_recipes(
     files: list[UploadFile] = File(...),
     postal_code: str | None = Form(default=None),

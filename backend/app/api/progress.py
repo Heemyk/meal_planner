@@ -10,6 +10,7 @@ import asyncio
 import io
 import json
 import queue
+import threading
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -86,6 +87,13 @@ def _get_ingredient_ids_with_skus() -> set:
         return {s.ingredient_id for s in skus if s.expires_at > now}
 
 
+def _get_ingredient_ids_unavailable() -> set:
+    """Ingredient IDs explicitly marked sku_unavailable (SKU fetch returned 0)."""
+    with get_session() as session:
+        ingredients = list(session.exec(select(Ingredient)))
+        return {i.id for i in ingredients if getattr(i, "sku_unavailable", False)}
+
+
 def _match_and_normalize(ingredient_text: str, existing_names: list[str]):
     from app.services.llm.ingredient_matcher import match_ingredient
     from app.services.llm.unit_normalizer import normalize_units
@@ -111,6 +119,7 @@ def _run_processing(
             "ingredients_added": 0,
             "ingredients_total": ingredient_totals.get(name, 1),
             "ingredients_with_skus": 0,
+            "ingredients_unavailable": 0,
             "sku_total": 0,
             "ingredient_ids": [],
         }
@@ -119,10 +128,47 @@ def _run_processing(
 
     def _put(event: str, data: dict):
         event_queue.put_nowait((event, data))
-        snap = [{"name": f["name"], "ingredients_added": f["ingredients_added"], "ingredients_total": f["ingredients_total"], "ingredients_with_skus": f["ingredients_with_skus"], "sku_total": len(set(f.get("ingredient_ids") or []))} for f in files_progress]
+        snap = [{"name": f["name"], "ingredients_added": f["ingredients_added"], "ingredients_total": f["ingredients_total"], "ingredients_with_skus": f["ingredients_with_skus"], "ingredients_unavailable": f.get("ingredients_unavailable", 0), "sku_total": len(set(f.get("ingredient_ids") or []))} for f in files_progress]
         job_progress_store[job_id] = {"files": snap, "complete": event == "stream_complete"}
 
-    _put("upload_started", {"files": [{"name": f["name"], "ingredients_added": 0, "ingredients_total": f["ingredients_total"], "ingredients_with_skus": 0, "sku_total": 0} for f in files_progress]})
+    _put("upload_started", {"files": [{"name": f["name"], "ingredients_added": 0, "ingredients_total": f["ingredients_total"], "ingredients_with_skus": 0, "ingredients_unavailable": 0, "sku_total": 0} for f in files_progress]})
+
+    parsing_done = threading.Event()
+
+    def _sku_poll_loop():
+        import time
+        last_job_with_skus = -1
+        last_job_unavailable = -1
+        elapsed = 0
+        while elapsed < SKU_POLL_TIMEOUT:
+            time.sleep(SKU_POLL_INTERVAL)
+            elapsed += SKU_POLL_INTERVAL
+            job_ingredient_ids = set()
+            for f in files_progress:
+                job_ingredient_ids.update(f.get("ingredient_ids") or [])
+            job_sku_total = len(job_ingredient_ids)
+            for f in files_progress:
+                f["sku_total"] = len(set(f.get("ingredient_ids") or []))
+            ids_with_skus = _get_ingredient_ids_with_skus()
+            ids_unavailable = _get_ingredient_ids_unavailable()
+            for f in files_progress:
+                ing_ids = set(f.get("ingredient_ids") or [])
+                f["ingredients_with_skus"] = sum(1 for iid in ing_ids if iid in ids_with_skus)
+                f["ingredients_unavailable"] = sum(1 for iid in ing_ids if iid in ids_unavailable)
+            job_with_skus = sum(1 for iid in job_ingredient_ids if iid in ids_with_skus)
+            job_unavailable = sum(1 for iid in job_ingredient_ids if iid in ids_unavailable)
+            snap = [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "ingredients_unavailable": fp.get("ingredients_unavailable", 0), "sku_total": fp.get("sku_total", 0)} for fp in files_progress]
+            job_progress_store[job_id] = {"files": snap, "complete": False}
+            if job_with_skus != last_job_with_skus or job_unavailable != last_job_unavailable:
+                last_job_with_skus = job_with_skus
+                last_job_unavailable = job_unavailable
+                _put("sku_progress", {"job_ingredients_with_skus": job_with_skus, "job_ingredients_unavailable": job_unavailable, "job_sku_total": job_sku_total, "files": snap})
+            done = parsing_done.is_set() and (job_sku_total == 0 or job_with_skus + job_unavailable >= job_sku_total)
+            if done:
+                break
+
+    sku_poll_thread = threading.Thread(target=_sku_poll_loop, daemon=True)
+    sku_poll_thread.start()
 
     recipes_created = 0
     ingredients_created = 0
@@ -183,15 +229,15 @@ def _run_processing(
                         existing_lookup[canonical_name] = ingredient
                         existing_names.append(canonical_name)
                         ingredients_created += 1
-                        fetch_skus_for_ingredient.delay(ingredient.id, canonical_name, effective_postal)
-                        sku_jobs += 1
-                        files_progress[file_idx]["ingredients_added"] += 1
+                    fetch_skus_for_ingredient.delay(ingredient.id, canonical_name, effective_postal)
+                    sku_jobs += 1
+                    files_progress[file_idx]["ingredients_added"] += 1
                     files_progress[file_idx]["ingredient_ids"].append(ingredient.id)
 
                     _put("ingredient_added", {
                         "ingredients_added": ingredients_created,
                         "name": canonical_name,
-                        "files": [{"name": f["name"], "ingredients_added": f["ingredients_added"], "ingredients_total": f["ingredients_total"], "ingredients_with_skus": f["ingredients_with_skus"], "sku_total": len(set(f.get("ingredient_ids") or []))} for f in files_progress],
+                        "files": [{"name": f["name"], "ingredients_added": f["ingredients_added"], "ingredients_total": f["ingredients_total"], "ingredients_with_skus": f["ingredients_with_skus"], "ingredients_unavailable": f.get("ingredients_unavailable", 0), "sku_total": len(set(f.get("ingredient_ids") or []))} for f in files_progress],
                     })
 
                     recipe_ingredients.append(
@@ -223,31 +269,13 @@ def _run_processing(
         "recipes_created": recipes_created,
         "ingredients_created": ingredients_created,
         "sku_jobs_enqueued": sku_jobs,
-        "files": [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "sku_total": fp["sku_total"]} for fp in files_progress],
+        "files": [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "ingredients_unavailable": fp.get("ingredients_unavailable", 0), "sku_total": fp["sku_total"]} for fp in files_progress],
     })
 
-    elapsed = 0
-    last_progress = {}
-    while elapsed < SKU_POLL_TIMEOUT:
-        import time
-        time.sleep(SKU_POLL_INTERVAL)
-        elapsed += SKU_POLL_INTERVAL
-        prog = _get_sku_progress()
-        ids_with_skus = _get_ingredient_ids_with_skus()
-        for f in files_progress:
-            ing_ids = set(f.get("ingredient_ids") or [])
-            f["ingredients_with_skus"] = sum(1 for iid in ing_ids if iid in ids_with_skus)
-        snap = [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "sku_total": fp.get("sku_total", 0)} for fp in files_progress]
-        job_progress_store[job_id] = {"files": snap, "complete": False}
-        if prog != last_progress or elapsed == SKU_POLL_INTERVAL:
-            last_progress = prog.copy()
-            _put("sku_progress", {**prog, "files": snap})
-        if prog["ingredients_total"] == 0:
-            break
-        if prog["ingredients_with_skus"] >= prog["ingredients_total"]:
-            break
+    parsing_done.set()
+    sku_poll_thread.join(timeout=SKU_POLL_TIMEOUT)
 
-    final_snap = [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "sku_total": fp.get("sku_total", 0)} for fp in files_progress]
+    final_snap = [{"name": fp["name"], "ingredients_added": fp["ingredients_added"], "ingredients_total": fp["ingredients_total"], "ingredients_with_skus": fp["ingredients_with_skus"], "ingredients_unavailable": fp.get("ingredients_unavailable", 0), "sku_total": fp.get("sku_total", 0)} for fp in files_progress]
     _put("stream_complete", {})
     job_progress_store[job_id] = {"files": final_snap, "complete": True}
     try:
@@ -261,7 +289,52 @@ def get_progress(job_id: str) -> dict:
     return job_progress_store.get(job_id, {"files": [], "complete": False})
 
 
-@router.post("/recipes/upload")
+@router.get("/utilization")
+def get_utilization() -> dict:
+    """
+    Parallelization and utilization visibility.
+    - ingredient_workers: max parallelism for LLM ingredient matching (per recipe).
+    - sku_workers: Celery concurrency for SKU fetching.
+    - sku_queue_length: pending SKU tasks in Redis (approximate).
+    - timing_hint: grep '[TIMING]' in logs to see actual runtimes.
+    """
+    from app.config import settings
+    from app.workers.celery_app import celery_app
+
+    out = {
+        "ingredient_workers": {
+            "max_per_recipe": settings.ingredient_batch_max_workers,
+            "env_override": "INGREDIENT_BATCH_MAX_WORKERS",
+            "tuning": "Increase if LLM calls are the bottleneck (grep [TIMING] ingredient.batch.parallel). Rule of thumb: 2–4× CPU cores for I/O-bound. Max ~16 to avoid rate limits.",
+        },
+        "sku_workers": {
+            "celery_concurrency": settings.celery_worker_concurrency,
+            "env_override": "CELERY_WORKER_CONCURRENCY",
+            "tuning": "Increase if sku_queue_length stays high and active_tasks < concurrency. Each task does Instacart API + LLM filter. Rule of thumb: 10–20 for fast refresh.",
+        },
+        "batching": {
+            "ingredient_match": "ThreadPoolExecutor parallelizes match+normalize per recipe (no batch LLM calls)",
+            "sku_fetch": "One Celery task per ingredient; Instacart API is per-query (no batch endpoint)",
+        },
+    }
+    try:
+        from redis import Redis
+        conn = Redis.from_url(settings.redis_url)
+        out["sku_queue_length"] = conn.llen("celery")
+    except Exception:
+        out["sku_queue_length"] = None
+    try:
+        inspect = celery_app.control.inspect()
+        active = inspect.active()
+        if active:
+            total_active = sum(len(tasks) for tasks in active.values())
+            out["sku_workers"]["active_tasks"] = total_active
+    except Exception:
+        out["sku_workers"]["active_tasks"] = None
+    return out
+
+
+@router.post("/recipes/upload", status_code=202)
 async def upload_recipes(
     files: list[UploadFile] = File(...),
     postal_code: str | None = Form(default=None),
@@ -291,7 +364,7 @@ async def upload_recipes(
             ingredient_totals[name] = 1
 
     files_progress = [
-        {"name": name, "ingredients_added": 0, "ingredients_total": ingredient_totals.get(name, 1), "ingredients_with_skus": 0, "sku_total": 0}
+        {"name": name, "ingredients_added": 0, "ingredients_total": ingredient_totals.get(name, 1), "ingredients_with_skus": 0, "ingredients_unavailable": 0, "sku_total": 0}
         for _, name in file_contents
     ]
     job_progress_store[job_id] = {"files": files_progress, "complete": False}

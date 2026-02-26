@@ -39,8 +39,8 @@ const DEFAULT_PRINT_META = {
 };
 
 /**
- * Printable card canvas - Figma-style layout, paper-like, with editable text.
- * Styled to look like the actual printed output.
+ * Printable card canvas - elegant menu layout, paper-like, no scroll.
+ * Styled like a fine-dining menu with written-text typography.
  */
 function PrintableCardCanvas({ cards, onDescriptionChange }) {
   return (
@@ -49,53 +49,54 @@ function PrintableCardCanvas({ cards, onDescriptionChange }) {
       style={{
         aspectRatio: "210 / 297",
         maxWidth: 400,
-        backgroundColor: "hsl(40 25% 97%)",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.8)",
+        backgroundColor: "hsl(45 22% 96%)",
+        boxShadow: "0 2px 20px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
       }}
     >
-      {/* Paper texture / subtle border */}
-      <div className="absolute inset-0 rounded-lg border border-black/5" />
-      <div className="absolute inset-4 flex flex-col gap-3 overflow-auto">
+      <div className="absolute inset-0 rounded-lg border border-black/[0.04]" />
+      <div className="absolute inset-5 flex flex-col gap-2">
         <h2
-          className="font-display text-xl font-bold tracking-tight text-black/90"
-          style={{ fontFamily: "var(--font-display)" }}
+          className="font-display text-[1.1rem] font-medium tracking-[0.15em] uppercase text-black/85"
+          style={{ fontFamily: "var(--font-display)", letterSpacing: "0.12em" }}
         >
           Menu
         </h2>
-        <div className="h-px bg-black/10" />
-        {cards.map((dish, i) => {
-          const mealType = dish?.meal_type || "entree";
-          const theme = THEME_STYLES[mealType] || THEME_STYLES.entree;
-          const description = dish?.description ?? "";
-          return (
-            <div
-              key={dish?.name ?? i}
-              className="relative rounded-md px-3 py-2 transition-colors hover:bg-black/[0.02]"
-              style={{ backgroundColor: theme.accentBg }}
-            >
+        <div className="h-px w-12 bg-black/15" />
+        <div className="flex flex-1 flex-col gap-1.5 overflow-visible">
+          {cards.map((dish, i) => {
+            const mealType = dish?.meal_type || "entree";
+            const theme = THEME_STYLES[mealType] || THEME_STYLES.entree;
+            const description = dish?.description ?? "";
+            return (
               <div
-                className="absolute left-0 top-2 bottom-2 w-1 rounded-full"
-                style={{ backgroundColor: theme.borderColor }}
-              />
-              <div className="pl-4">
+                key={dish?.name ?? i}
+                className="relative flex-shrink-0 rounded px-2.5 py-1.5 transition-colors hover:bg-black/[0.02]"
+                style={{ backgroundColor: theme.accentBg }}
+              >
                 <div
-                  className="font-display font-semibold text-black/90 capitalize text-sm tracking-wide"
-                  style={{ fontFamily: "var(--font-display)" }}
-                >
-                  {dish?.name}
-                </div>
-                <textarea
-                  value={description}
-                  onChange={(e) => onDescriptionChange?.(dish?.name, e.target.value)}
-                  className="mt-1 w-full resize-none border-none bg-transparent p-0 text-xs leading-relaxed text-black/70 placeholder:text-black/40 focus:outline-none focus:ring-0"
-                  rows={3}
-                  placeholder="Description..."
-                  style={{ fontFamily: "var(--font-body)" }}
+                  className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full"
+                  style={{ backgroundColor: theme.borderColor }}
                 />
+                <div className="pl-3">
+                  <div
+                    className="font-display font-medium text-black/90 capitalize text-[13px] tracking-wide"
+                    style={{ fontFamily: "var(--font-display)" }}
+                  >
+                    {dish?.name}
+                  </div>
+                  <textarea
+                    value={description}
+                    onChange={(e) => onDescriptionChange?.(dish?.name, e.target.value)}
+                    className="mt-0.5 w-full resize-none border-none bg-transparent p-0 text-[10px] leading-snug text-black/60 placeholder:text-black/30 focus:outline-none focus:ring-0"
+                    rows={2}
+                    placeholder="Brief description..."
+                    style={{ fontFamily: "var(--font-body)" }}
+                  />
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -103,7 +104,7 @@ function PrintableCardCanvas({ cards, onDescriptionChange }) {
 
 /**
  * Static card for html2canvas capture - no interactive elements.
- * Rendered off-screen so it doesn't flash; html2canvas can still capture it.
+ * Sleek menu typography, succinct descriptions.
  */
 function CardForCapture({ cards }) {
   return (
@@ -111,38 +112,44 @@ function CardForCapture({ cards }) {
       className="w-[420px] overflow-hidden"
       style={{
         aspectRatio: "210 / 297",
-        backgroundColor: "hsl(40 25% 97%)",
+        backgroundColor: "hsl(45 22% 96%)",
       }}
     >
-      <div className="flex h-full w-full flex-col gap-3 p-6">
-        <h2 className="font-display text-xl font-bold tracking-tight text-black/90">Menu</h2>
-        <div className="h-px bg-black/10" />
-        {cards.map((dish, i) => {
-          const mealType = dish?.meal_type || "entree";
-          const theme = THEME_STYLES[mealType] || THEME_STYLES.entree;
-          return (
-            <div
-              key={dish?.name ?? i}
-              className="rounded-md px-3 py-2"
-              style={{ backgroundColor: theme.accentBg }}
-            >
-              <div className="flex gap-3">
+      <div className="flex h-full w-full flex-col gap-2 p-5">
+        <h2
+          className="font-display text-[1.1rem] font-medium tracking-[0.15em] uppercase text-black/85"
+          style={{ letterSpacing: "0.12em" }}
+        >
+          Menu
+        </h2>
+        <div className="h-px w-12 bg-black/15" />
+        <div className="flex flex-1 flex-col gap-1.5">
+          {cards.map((dish, i) => {
+            const mealType = dish?.meal_type || "entree";
+            const theme = THEME_STYLES[mealType] || THEME_STYLES.entree;
+            const desc = (dish?.description || "—").trim();
+            return (
+              <div
+                key={dish?.name ?? i}
+                className="flex flex-shrink-0 gap-2 rounded px-2.5 py-1.5"
+                style={{ backgroundColor: theme.accentBg }}
+              >
                 <div
-                  className="w-1 shrink-0 rounded-full"
+                  className="w-0.5 shrink-0 self-stretch rounded-full"
                   style={{ backgroundColor: theme.borderColor }}
                 />
-                <div>
-                  <div className="font-display font-semibold text-black/90 capitalize text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className="font-display font-medium text-black/90 capitalize text-[13px] tracking-wide">
                     {dish?.name}
                   </div>
-                  <p className="mt-1 text-xs leading-relaxed text-black/70">
-                    {dish?.description || "—"}
+                  <p className="mt-0.5 text-[10px] leading-snug text-black/60 line-clamp-2">
+                    {desc}
                   </p>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -178,12 +185,21 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
     }
 
     try {
-      const canvas = await html2canvas(container, {
-        scale: printMeta.resolution / 96,
-        useCORS: true,
-        backgroundColor: "hsl(40 25% 97%)",
-        logging: false,
-      });
+      // Clone into viewport so html2canvas can render it (off-screen elements often fail)
+      const clone = container.cloneNode(true);
+      clone.style.cssText = "position:fixed;left:0;top:0;z-index:9999;opacity:0.001;pointer-events:none;";
+      document.body.appendChild(clone);
+      let canvas;
+      try {
+        canvas = await html2canvas(clone, {
+          scale: printMeta.resolution / 96,
+          useCORS: true,
+          backgroundColor: "hsl(40 25% 97%)",
+          logging: false,
+        });
+      } finally {
+        document.body.removeChild(clone);
+      }
 
       const imgData = canvas.toDataURL("image/png");
       const sizeKey = printMeta.size.toLowerCase().replace(/\s/g, "");
@@ -224,8 +240,13 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
       const a = document.createElement("a");
       a.href = url;
       a.download = "menu-card-export.zip";
+      a.style.display = "none";
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 150);
     } catch (err) {
       console.error("Export failed:", err);
     }
@@ -263,7 +284,7 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
             </button>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-auto p-4">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 p-4">
             {/* Card canvas - Figma-style WYSIWYG */}
             <div className="flex flex-col gap-2">
               <span className="text-sm text-muted-foreground">Card preview</span>
@@ -273,10 +294,11 @@ export function MenuCardEditor({ menuCard, open, onClose }) {
                   onDescriptionChange={handleDescriptionChange}
                 />
               </div>
-              {/* Off-screen clone for capture (static, no textareas) */}
+              {/* Invisible clone for capture - in-viewport so html2canvas can render it */}
               <div
                 ref={captureRef}
-                className="fixed -left-[9999px] top-0 z-[-1]"
+                className="fixed left-0 top-0 w-[420px] opacity-0 pointer-events-none -z-10"
+                style={{ aspectRatio: "210 / 297" }}
                 aria-hidden
               >
                 <CardForCapture cards={displayCards} />

@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 from sqlmodel import select
 
 from app.logging import get_logger
@@ -121,9 +121,61 @@ def ingredients_with_skus():
                 "name": i.canonical_name,
                 "base_unit": i.base_unit,
                 "skus": [_sku_row(sk) for sk in skus_by_ingredient.get(i.id, [])],
+                "sku_unavailable": getattr(i, "sku_unavailable", False),
             }
             for i in ingredients
         ]
+
+
+@router.post("/sku/refresh")
+def refresh_skus(body: dict | None = Body(default=None)) -> dict:
+    """
+    Manually trigger SKU refresh for ingredients with no valid (non-expired) prices.
+    Body: { "ingredient_ids": [1,2,3], "postal_code": "10001" } — both optional.
+    Omit ingredient_ids to refresh all needing it. Enqueues fetch_skus_for_ingredient tasks.
+    """
+    from app.storage.repositories import get_ingredients_needing_sku_refresh
+    from app.workers.tasks import refresh_expired_skus
+
+    body = body or {}
+    ingredient_ids = body.get("ingredient_ids")
+    postal_code = body.get("postal_code")
+    refresh_expired_skus.delay(ingredient_ids=ingredient_ids, postal_code=postal_code)
+    with get_session() as session:
+        ingredients = get_ingredients_needing_sku_refresh(session, ingredient_ids)
+    return {
+        "queued": len(ingredients),
+        "ingredient_ids": [i.id for i in ingredients],
+        "message": f"Enqueued SKU refresh for {len(ingredients)} ingredient(s)",
+    }
+
+
+@router.post("/sku/reset")
+def reset_skus(body: dict | None = Body(default=None)) -> dict:
+    """
+    Delete all SKU rows for given ingredient_ids, then enqueue refresh.
+    Body: { "ingredient_ids": [1,2,3], "postal_code": "10001" }. ingredient_ids required.
+    Use to force full re-fetch of prices. Parsed data (Recipe/Ingredient) is unchanged.
+    """
+    from app.storage.repositories import delete_skus_for_ingredients, get_ingredients_needing_sku_refresh
+    from app.workers.tasks import refresh_expired_skus
+
+    body = body or {}
+    ingredient_ids = body.get("ingredient_ids")
+    if not ingredient_ids:
+        return {"deleted": 0, "queued": 0, "message": "ingredient_ids required"}
+    postal_code = body.get("postal_code")
+    with get_session() as session:
+        deleted = delete_skus_for_ingredients(session, ingredient_ids)
+    refresh_expired_skus.delay(ingredient_ids=ingredient_ids, postal_code=postal_code)
+    with get_session() as session:
+        ingredients = get_ingredients_needing_sku_refresh(session, ingredient_ids)
+    return {
+        "deleted": deleted,
+        "queued": len(ingredients),
+        "ingredient_ids": ingredient_ids,
+        "message": f"Deleted {deleted} SKU(s), enqueued refresh for {len(ingredients)} ingredient(s)",
+    }
 
 
 @router.get("/sku-status")

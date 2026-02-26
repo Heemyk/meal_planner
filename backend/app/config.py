@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     llm_provider: str = "openai"
     llm_model: str = "gpt-4o-mini"
+    llm_model_reasoning: str = "gpt-4o"  # Smarter model for math/reasoning (SKU conversion, etc.)
     llm_api_key: str = ""
     llm_temperature: float = 0.2
     llm_timeout_s: int = 30

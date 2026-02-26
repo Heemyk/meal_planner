@@ -1,24 +1,21 @@
-INGREDIENT_MATCH_PROMPT_VERSION = "v2"
+INGREDIENT_MATCH_PROMPT_VERSION = "v3"
 UNIT_NORMALIZE_PROMPT_VERSION = "v4"
 SKU_FILTER_PROMPT_VERSION = "v3"
 ALLERGEN_INFER_PROMPT_VERSION = "v2"
-SKU_SIZE_CONVERT_PROMPT_VERSION = "v3"
+SKU_SIZE_CONVERT_PROMPT_VERSION = "v4"
 
 INGREDIENT_MATCH_TEMPLATE = """You are matching an ingredient line to a canonical ingredient list.
 Return a decision with:
 - decision: existing | new | similar
-- canonical_name: best canonical ingredient name
+- canonical_name: best canonical ingredient name (use SINGULAR form, e.g. tomato not tomatoes)
 - rationale: short, non-sensitive explanation
 - follow_up_action: if decision=similar, choose one: keep_specific | generalize | substitute
+
 Rules:
-1) Use existing if the ingredient is clearly the same (case/format differences only).
-2) Use new if it is not in the list and not a close variant.
-3) Use similar if it is a close variant or a possible substitution.
-4) If similar, follow this reasoning flow internally:
-   - Check recipe-criticality (texture, chemistry, cooking method).
-   - Check specificity needed for flavor profile.
-   - Consider cost/availability tradeoff.
-   - Choose follow_up_action accordingly.
+1) Use existing if the ingredient is clearly the same. Singular/plural = same: tomato, tomatoes → existing. Cherry tomatoes, roma tomatoes, grape tomatoes → all match "tomato".
+2) Consolidate variants: tomato, tomatoes, cherry tomatoes, grape tomatoes, roma → canonical_name: tomato (singular base form).
+3) Use new only if truly different (e.g. tomato sauce vs whole tomato).
+4) If similar, choose generalize when a specific type can use the general for shopping.
 Do not include step-by-step reasoning in the rationale.
 """
 
@@ -86,7 +83,7 @@ Dish names: {dish_names}
 
 Tone:"""
 
-DISH_DESCRIPTION_TEMPLATE = """Write a short menu-card description for this dish.
+DISH_DESCRIPTION_TEMPLATE = """Write a succinct menu-card description for this dish.
 
 TONE: {tone_prompt}
 
@@ -94,14 +91,9 @@ Dish: {dish_name}
 Ingredients: {ingredients}
 Instructions (first line): {instructions}
 
-First reason about how the dish is composed: Consider each significant ingredient—how it is typically prepared (sautéed, roasted, etc.), how it contributes to texture and flavor, and how the instructions suggest the dish comes together. Then write the description.
+First reason about how the dish is composed: Consider each significant ingredient—how it is typically prepared, how it contributes to texture and flavor. Then write the description.
 
-Required structure (2-3 sentences):
-1. Most significant ingredients (highlight key flavors).
-2. How it is composed (cooking method, preparation—based on your reasoning about the ingredients).
-3. Origin or how it fits the overall vibe of the menu.
-
-Be concise. Match the tone exactly. No bullet points."""
+Required: 1–2 short sentences only. First sentence: key ingredients and preparation. Second sentence (optional): how it fits the menu vibe. Be concise. Match the tone exactly. No bullet points."""
 
 UNIT_CONVERSION_ONTOLOGY = """Unit-to-unit conversions only (do not convert ingredients to weight/volume):
 - 1 tablespoon = 1 tbsp = 3 tsp = 15 ml
@@ -119,22 +111,26 @@ For whole countable items use count: lemons, eggs, cloves, apples, etc. Do not c
 For herbs/spices measured by spoon (e.g. 2 tablespoons rosemary): use tbsp or ml, not grams.
 """
 
-SKU_SIZE_CONVERT_TEMPLATE = """Convert a product size string to a quantity in the target base unit.
+SKU_SIZE_CONVERT_TEMPLATE = """Solve this as a MATHEMATICAL CONVERSION problem.
 
-IMPORTANT: If size_string is vague ("each", "1 each", empty) but product_name contains quantity (e.g. "Olive Oil, 2 L", "500ml", "67.63 fl oz"), extract and use the quantity from the product name. Prefer name when size lacks usable quantity.
+GIVEN:
+- size_string: the product pack size (e.g. "5 lb", "32 fl oz", "each")
+- product_name: product name (may contain quantity if size is vague, e.g. "Olive Oil, 2 L")
+- base_unit: target unit for output (g, ml, count, tbsp, tsp)
 
-CRITICAL: quantity_in_base_unit MUST be in the target base unit, not the raw size number.
-E.g. "5 lb" with base g → quantity_in_base_unit=2267.95 (5 × 453.59), NOT 5.
-E.g. "32 fl oz" with base ml → quantity_in_base_unit=946.24 (32 × 29.57), NOT 32.
+CONVERSION FACTS (use these exactly):
+- 1 lb = 453.59 g
+- 1 oz (weight) = 28.35 g
+- 1 fl oz = 29.57 ml
+- 1 cup = 240 ml, 1 L = 1000 ml
+- count: whole items → 1 per item
 
-Rules:
-- For weight base (g): convert lb, oz to g. 1 lb = 453.59 g, 1 oz = 28.35 g.
-- For volume base (ml): convert fl oz, cup, pint, gallon, L to ml. 1 fl oz = 29.57 ml. 1 L = 1000 ml.
-- For count base: "each", "1 count", "1 ct", "per lb" (whole items like chicken) → 1.
-- For liquids (oil, cream, milk, juice): use BOTTLE/CARTON volume. "16 fl oz" → 473 ml. Never use count for liquids.
-- For "per lb" / "per oz" (sold by weight): use typical pack size. "per lb" chicken → 4 lb pack = 1814 g. size_display = "4 lb".
-- size_display: human-friendly. "5 lb" NOT "5 per lb". "each" → "1 each". Liquids → "16 fl oz" or "473 ml".
-- product_name: use when size is vague. E.g. "Kirkland Olive Oil, 2 L" + size "each" → 2000 ml for base ml.
+REASON step-by-step:
+1. Extract the numeric amount and unit from size_string (or product_name if size is vague like "each").
+2. Identify which conversion factor applies.
+3. Compute: quantity_in_base_unit = amount × conversion_factor. Show the multiplication.
+4. Output the final numeric quantity in base_unit. E.g. "5 lb" + base g → 5 × 453.59 = 2267.95.
 
-Return quantity_in_base_unit (numeric, in target base unit) and size_display (string).
+CRITICAL: quantity_in_base_unit is the TOTAL amount in ONE pack, expressed in base_unit. NOT the raw number (e.g. 2267.95 for "5 lb"→g, never 5).
+size_display: human-friendly label (e.g. "5 lb", "32 fl oz", "1 each").
 """

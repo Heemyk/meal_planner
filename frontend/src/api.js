@@ -3,10 +3,15 @@ import { logger } from "./logger.js";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8008/api";
 const apiLogger = logger.child("api");
 
-export async function uploadRecipes(files) {
+/**
+ * Upload recipes. Returns 202 with { job_id, files } (real ingredient counts).
+ * Connect to subscribeUploadStream(jobId, onProgress) for SSE events.
+ */
+export async function uploadRecipes(files, postalCode) {
   apiLogger.info("upload.start", { count: files.length });
   const formData = new FormData();
   Array.from(files).forEach((file) => formData.append("files", file));
+  if (postalCode) formData.append("postal_code", postalCode);
   const response = await fetch(`${API_URL}/recipes/upload`, {
     method: "POST",
     body: formData,
@@ -20,6 +25,43 @@ export async function uploadRecipes(files) {
 }
 
 /**
+ * Subscribe to SSE stream for an upload job.
+ * onProgress: (event, data) => void
+ * Events: upload_started, ingredient_added, upload_complete, sku_progress, stream_complete
+ * Returns a promise that resolves when stream_complete is received.
+ */
+export function subscribeUploadStream(jobId, onProgress) {
+  return new Promise((resolve) => {
+    const url = `${API_URL}/recipes/upload/stream/${encodeURIComponent(jobId)}`;
+    const es = new EventSource(url);
+    const events = ["upload_started", "ingredient_added", "upload_complete", "sku_progress", "stream_complete"];
+    const handle = (e) => {
+      try {
+        const data = JSON.parse(e.data || "{}");
+        onProgress?.(e.type, data);
+        if (e.type === "stream_complete") {
+          es.close();
+          resolve();
+        }
+      } catch (err) {
+        if (e.type === "stream_complete") {
+          es.close();
+          resolve();
+        }
+      }
+    };
+    for (const ev of events) {
+      es.addEventListener(ev, handle);
+    }
+    es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) {
+        resolve();
+      }
+    };
+  });
+}
+
+/**
  * Get progress for an upload job (for polling).
  * Returns { files: [{ name, ingredients_added, ingredients_total, ingredients_with_skus, sku_total }], complete }
  */
@@ -29,64 +71,6 @@ export async function getProgress(jobId) {
   return res.json();
 }
 
-/**
- * Create progress entry before upload so polling shows bars immediately.
- * Call this right before uploadRecipesStream.
- */
-export async function uploadStart(jobId, fileCount = 1) {
-  const res = await fetch(`${API_URL}/upload/start?job_id=${encodeURIComponent(jobId)}&file_count=${fileCount}`, {
-    method: "POST",
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
-/**
- * Upload recipes and consume SSE progress stream.
- * onProgress: (event, data) => void
- * Events: upload_started, ingredient_added, upload_complete, sku_progress, stream_complete
- */
-export async function uploadRecipesStream(files, onProgress, postalCode, jobId) {
-  apiLogger.info("upload.stream.start", { count: files.length, postalCode, jobId });
-  const formData = new FormData();
-  Array.from(files).forEach((file) => formData.append("files", file));
-  if (postalCode) formData.append("postal_code", postalCode);
-  if (jobId) formData.append("job_id", jobId);
-  const response = await fetch(`${API_URL}/recipes/upload/stream`, {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    apiLogger.error("upload.stream.error", { status: response.status });
-    throw new Error("Upload failed");
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop() || "";
-    for (const chunk of lines) {
-      if (chunk.startsWith("event:")) {
-        const [eventLine, dataLine] = chunk.split("\n");
-        const event = eventLine.replace("event:", "").trim();
-        const dataStr = dataLine?.replace("data:", "").trim();
-        if (dataStr) {
-          try {
-            const data = JSON.parse(dataStr);
-            onProgress?.(event, data);
-          } catch (e) {
-            apiLogger.warn("upload.stream.parse_error", { event, e });
-          }
-        }
-      }
-    }
-  }
-  apiLogger.info("upload.stream.end");
-}
 
 export async function createPlan(targetServings, postalCode, options = {}) {
   apiLogger.info("plan.start", { targetServings, postalCode, options });

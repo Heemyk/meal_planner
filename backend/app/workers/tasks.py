@@ -15,7 +15,7 @@ logger = get_task_logger(__name__)
 app_logger = get_logger(__name__)
 
 
-@celery_app.task(rate_limit="10/m", bind=True)
+@celery_app.task(bind=True)
 def fetch_skus_for_ingredient(self, ingredient_id: int, ingredient_name: str, postal_code: str | None = None):
     task_id = self.request.id
     postal_code = postal_code or settings.default_postal_code
@@ -112,6 +112,27 @@ def fetch_skus_for_ingredient(self, ingredient_id: int, ingredient_name: str, po
                 exc_info=True,
             )
             raise
+
+
+@celery_app.task
+def refresh_expired_skus(ingredient_ids: list[int] | None = None, postal_code: str | None = None):
+    """
+    Find ingredients with no valid (non-expired) SKUs and re-enqueue fetch jobs.
+    Run periodically (e.g. every 30 min) via Celery Beat, or manually via API.
+    - ingredient_ids: optional, limit to these IDs; None = all needing refresh
+    - postal_code: optional, default_postal_code used if not provided
+    """
+    from app.storage.repositories import get_ingredients_needing_sku_refresh
+
+    postal = postal_code or settings.default_postal_code
+    with get_session() as session:
+        ingredients = get_ingredients_needing_sku_refresh(session, ingredient_ids)
+    count = 0
+    for ing in ingredients:
+        fetch_skus_for_ingredient.delay(ing.id, ing.canonical_name, postal)
+        count += 1
+    app_logger.info("sku.refresh_expired queued=%s ingredient_ids=%s", count, [i.id for i in ingredients])
+    return {"queued": count, "ingredient_ids": [i.id for i in ingredients]}
 
 
 def _parse_price(price: str | None) -> float | None:

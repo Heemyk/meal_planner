@@ -12,38 +12,61 @@ from app.utils.timing import _format_duration
 logger = get_logger(__name__)
 
 
+def _make_openai_lm(model: str, max_tokens: int = 1024) -> dspy.LM:
+    return dspy.OpenAI(
+        model=model,
+        api_key=settings.llm_api_key,
+        temperature=settings.llm_temperature,
+        timeout=settings.llm_timeout_s,
+        max_tokens=max_tokens,
+    )
+
+
+def get_reasoning_lm() -> dspy.LM:
+    """Smarter model for math/reasoning tasks (SKU conversion, etc.)."""
+    return _make_openai_lm(
+        model=getattr(settings, "llm_model_reasoning", "gpt-4o"),
+        max_tokens=2048,  # CoT output can be longer
+    )
+
+
 def configure_dspy() -> None:
-    if settings.llm_provider == "openai":
-        lm = dspy.OpenAI(
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            temperature=settings.llm_temperature,
-            timeout=settings.llm_timeout_s,
-            max_tokens=1024,  # Avoid truncation of JSON array output (e.g. sku_filter)
-        )
-    else:
-        lm = dspy.OpenAI(
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            temperature=settings.llm_temperature,
-            timeout=settings.llm_timeout_s,
-            max_tokens=1024,
-        )
+    lm = _make_openai_lm(settings.llm_model)
     dspy.settings.configure(lm=lm, trace=[])
     logger.info("llm.configure provider=%s model=%s", settings.llm_provider, settings.llm_model)
 
 
 def run_with_logging(prompt_name: str, prompt_version: str, fn: Any, **kwargs: Any) -> Any:
+    return _run_llm_call(prompt_name, prompt_version, fn, model=settings.llm_model, **kwargs)
+
+
+def run_with_reasoning_model(prompt_name: str, prompt_version: str, fn: Any, **kwargs: Any) -> Any:
+    """Run fn using the reasoning model (gpt-4o etc.) for math/reasoning tasks."""
+    model = getattr(settings, "llm_model_reasoning", "gpt-4o")
+    return _run_llm_call(prompt_name, prompt_version, fn, model=model, use_reasoning_lm=True, **kwargs)
+
+
+def _run_llm_call(
+    prompt_name: str, prompt_version: str, fn: Any, *, model: str, use_reasoning_lm: bool = False, **kwargs: Any
+) -> Any:
     start = time.time()
-    logger.info("[TIMING] llm.call.start name=%s version=%s", prompt_name, prompt_version)
-    result = fn(**kwargs)
+    logger.info("[TIMING] llm.call.start name=%s version=%s model=%s", prompt_name, prompt_version, model)
+    prev_lm = None
+    if use_reasoning_lm:
+        prev_lm = dspy.settings.lm
+        dspy.settings.configure(lm=get_reasoning_lm(), trace=getattr(dspy.settings, "trace", []))
+    try:
+        result = fn(**kwargs)
+    finally:
+        if prev_lm is not None:
+            dspy.settings.configure(lm=prev_lm, trace=getattr(dspy.settings, "trace", []))
     latency_ms = int((time.time() - start) * 1000)
     with get_session() as session:
         log_llm_call(
             session=session,
             prompt_name=prompt_name,
             prompt_version=prompt_version,
-            model=settings.llm_model,
+            model=model,
             input_payload=str(kwargs),
             output_payload=str(result),
             latency_ms=latency_ms,

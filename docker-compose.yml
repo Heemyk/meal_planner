@@ -47,6 +47,14 @@ services:
       - postgres
       - redis
 
+  beat:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    command: celery -A app.workers.celery_app.celery_app beat -l info
+    depends_on:
+      - redis
+
   frontend:
     build: ./frontend
     ports:

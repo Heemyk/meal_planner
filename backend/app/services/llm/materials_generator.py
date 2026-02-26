@@ -87,9 +87,9 @@ def _generate_dish_description(
         import dspy
 
         class DishDescriptionSignature(dspy.Signature):
-            """Write menu-card description. Output only the description, 2-3 sentences."""
+            """Write menu-card description. Output only the description, 1-2 succinct sentences."""
             prompt: str = dspy.InputField(desc="full prompt with tone, dish, ingredients")
-            description: str = dspy.OutputField(desc="2-3 sentence menu description")
+            description: str = dspy.OutputField(desc="1-2 sentence succinct menu description")
 
         predictor = dspy.Predict(DishDescriptionSignature)
         pred = run_with_logging(

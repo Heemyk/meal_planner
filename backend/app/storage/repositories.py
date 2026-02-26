@@ -111,6 +111,39 @@ def get_active_skus(session: Session, ingredient_id: int) -> list[SKU]:
     )
 
 
+def delete_skus_for_ingredients(session: Session, ingredient_ids: list[int]) -> int:
+    """
+    Delete all SKU rows for the given ingredient IDs. Use to reset/re-fetch prices.
+    Leaves Recipe/Ingredient/RecipeIngredient intact. Returns count deleted.
+    """
+    if not ingredient_ids:
+        return 0
+    ids_set = set(ingredient_ids)
+    skus = list(session.exec(select(SKU).where(SKU.ingredient_id.in_(ids_set))))
+    for s in skus:
+        session.delete(s)
+    session.commit()
+    return len(skus)
+
+
+def get_ingredients_needing_sku_refresh(
+    session: Session, ingredient_ids: list[int] | None = None
+) -> list[Ingredient]:
+    """
+    Ingredients that have no valid (expires_at > now) SKUs.
+    Use for TTL-based refresh: when prices expire, we re-fetch.
+    Optionally filter to specific ingredient_ids.
+    """
+    now = datetime.utcnow()
+    ingredients = list(session.exec(select(Ingredient)))
+    if ingredient_ids is not None:
+        ids_set = set(ingredient_ids)
+        ingredients = [i for i in ingredients if i.id in ids_set]
+    skus = list(session.exec(select(SKU)))
+    ids_with_valid_skus = {s.ingredient_id for s in skus if s.expires_at > now}
+    return [i for i in ingredients if i.id not in ids_with_valid_skus]
+
+
 def create_menu_plan(session: Session, target_servings: int, plan_payload: str) -> MenuPlan:
     plan = MenuPlan(target_servings=target_servings, plan_payload=plan_payload)
     session.add(plan)

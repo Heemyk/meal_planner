@@ -8,7 +8,7 @@ from typing import Tuple
 
 import dspy
 
-from app.services.llm.dspy_client import run_with_logging
+from app.services.llm.dspy_client import run_with_reasoning_model
 from app.services.llm.prompts import (
     SKU_SIZE_CONVERT_PROMPT_VERSION,
     SKU_SIZE_CONVERT_TEMPLATE,
@@ -31,7 +31,7 @@ class SKUSizeConvertSignature(dspy.Signature):
 class SKUSizeConverter(dspy.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.predict = dspy.Predict(SKUSizeConvertSignature)
+        self.predict = dspy.ChainOfThought(SKUSizeConvertSignature)
 
     def forward(self, size_string: str, base_unit: str, product_name: str = "") -> dspy.Prediction:
         return self.predict(
@@ -90,7 +90,7 @@ def convert_sku_size(size_string: str | None, base_unit: str, product_name: str 
     product_name = (product_name or "").strip()
     try:
         converter = SKUSizeConverter()
-        pred = run_with_logging(
+        pred = run_with_reasoning_model(
             prompt_name="sku_size_convert",
             prompt_version=SKU_SIZE_CONVERT_PROMPT_VERSION,
             fn=converter.forward,

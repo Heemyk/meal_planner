@@ -2,9 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   createPlan,
-  uploadRecipesStream,
-  getProgress,
-  uploadStart,
+  uploadRecipes,
+  subscribeUploadStream,
   getIngredientsWithSkus,
   getRecipes,
   getLocation,
@@ -13,13 +12,20 @@ import {
 } from "./api.js";
 import { logger } from "./logger.js";
 import { AppBackground } from "./components/AppBackground.jsx";
-import { ProgressBar } from "./components/ProgressBar.jsx";
+import { ProgressBar, SegmentedProgressBar } from "./components/ProgressBar.jsx";
 import { IngredientCard } from "./components/IngredientCard.jsx";
 import { RecipeCard } from "./components/RecipeCard.jsx";
 import { MenuCardEditor } from "./components/MenuCardEditor.jsx";
 import { cn } from "./lib/utils.js";
 
 const uiLogger = logger.child("ui");
+
+const MENU_THEME_STYLES = {
+  appetizer: { borderColor: "hsl(36 90% 45%)", accentBg: "hsl(36 90% 55% / 0.06)" },
+  entree: { borderColor: "hsl(270 70% 50%)", accentBg: "hsl(270 70% 50% / 0.06)" },
+  dessert: { borderColor: "hsl(340 70% 55%)", accentBg: "hsl(340 70% 55% / 0.06)" },
+  side: { borderColor: "hsl(150 60% 40%)", accentBg: "hsl(150 60% 40% / 0.06)" },
+};
 
 export default function App() {
   const [files, setFiles] = useState([]);
@@ -138,45 +144,15 @@ export default function App() {
     setStreamComplete(false);
     setFileProgress([]);
     setProgressExpanded(false);
-    const jobId = crypto.randomUUID?.() || `job-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const postalCode = manualPostalCode.trim() || location.postal_code;
 
-    // Create progress entry immediately so bars show before/during upload
-    const fileCount = Math.max(1, Array.isArray(files) ? files.length : (files?.length ?? 1));
     try {
-      const startData = await uploadStart(jobId, fileCount);
-      if (startData?.files?.length) {
-        setFileProgress(startData.files.map((f, i) => ({ ...f, _id: `${f.name}-${i}` })));
-      } else if (fileCount > 0) {
-        // Fallback if API doesn't return files (e.g. old backend)
-        setFileProgress(
-          Array.from({ length: fileCount }, (_, i) => ({
-            name: `file_${i + 1}`,
-            ingredients_added: 0,
-            ingredients_total: 1,
-            ingredients_with_skus: 0,
-            sku_total: 1,
-            _id: `file_${i}`,
-          }))
-        );
-      }
-    } catch {
-      // Fallback: show placeholder bars so user sees something
-      setFileProgress(
-        Array.from({ length: fileCount }, (_, i) => ({
-          name: `file_${i + 1}`,
-          ingredients_added: 0,
-          ingredients_total: 1,
-          ingredients_with_skus: 0,
-          sku_total: 1,
-          _id: `file_${i}`,
-        }))
-      );
-    }
+      uiLogger.info("upload.click", { count: files.length });
+      const { job_id: jobId, files: filesProgress } = await uploadRecipes(files, postalCode);
+      setFileProgress((filesProgress || []).map((f, i) => ({ ...f, _id: `${f.name}-${i}` })));
 
-    const pollInterval = setInterval(async () => {
-      try {
-        const data = await getProgress(jobId);
-        if (data?.files?.length) {
+      await subscribeUploadStream(jobId, (event, data) => {
+        if (data.files?.length && ["upload_started", "ingredient_added", "upload_complete", "sku_progress"].includes(event)) {
           setFileProgress((prev) =>
             data.files.map((f, i) => {
               const existing = prev.find((p) => p.name === f.name && (p.ingredients_total ?? 0) === (f.ingredients_total ?? 0));
@@ -184,40 +160,16 @@ export default function App() {
             })
           );
         }
-      } catch {
-        // Ignore poll errors
-      }
-    }, 400);
-
-    try {
-      uiLogger.info("upload.click", { jobId });
-      await uploadRecipesStream(
-        files,
-        (event, data) => {
-          if (data.files?.length && ["upload_started", "ingredient_added", "upload_complete", "sku_progress"].includes(event)) {
-            setFileProgress((prev) =>
-              data.files.map((f, i) => {
-                const existing = prev.find((p) => p.name === f.name && (p.ingredients_total ?? 0) === (f.ingredients_total ?? 0));
-                return { ...f, _id: existing?._id ?? `${f.name}-${i}` };
-              })
-            );
-          }
-          if (event === "stream_complete") {
-            clearInterval(pollInterval);
-            setStreamComplete(true);
-            fetchIngredients();
-            fetchRecipes();
-          }
-        },
-        manualPostalCode.trim() || location.postal_code,
-        jobId
-      );
+        if (event === "stream_complete") {
+          setStreamComplete(true);
+          fetchIngredients();
+          fetchRecipes();
+        }
+      });
     } catch (err) {
       uiLogger.error("upload.failed", err);
       setError(err.message);
-      clearInterval(pollInterval);
     } finally {
-      clearInterval(pollInterval);
       setIsUploading(false);
     }
   };
@@ -242,16 +194,26 @@ export default function App() {
   };
 
   const sortedFileProgress = [...fileProgress].sort((a, b) => {
-    const doneA = (a.ingredients_added >= (a.ingredients_total || 1)) && (a.ingredients_with_skus >= (a.sku_total || a.ingredients_total || 1));
-    const doneB = (b.ingredients_added >= (b.ingredients_total || 1)) && (b.ingredients_with_skus >= (b.sku_total || b.ingredients_total || 1));
+    const skuTotalA = a.sku_total || a.ingredients_total || 1;
+    const skuTotalB = b.sku_total || b.ingredients_total || 1;
+    const pricingDoneA = (a.ingredients_with_skus ?? 0) + (a.ingredients_unavailable ?? 0) >= skuTotalA;
+    const pricingDoneB = (b.ingredients_with_skus ?? 0) + (b.ingredients_unavailable ?? 0) >= skuTotalB;
+    const doneA = (a.ingredients_added >= (a.ingredients_total || 1)) && pricingDoneA;
+    const doneB = (b.ingredients_added >= (b.ingredients_total || 1)) && pricingDoneB;
     if (doneA && !doneB) return 1;
     if (!doneA && doneB) return -1;
-    const scoreA = ((a.ingredients_added || 0) / (a.ingredients_total || 1) + (a.ingredients_with_skus || 0) / (a.sku_total || a.ingredients_total || 1)) / 2;
-    const scoreB = ((b.ingredients_added || 0) / (b.ingredients_total || 1) + (b.ingredients_with_skus || 0) / (b.sku_total || b.ingredients_total || 1)) / 2;
+    const pricingScoreA = ((a.ingredients_with_skus ?? 0) + (a.ingredients_unavailable ?? 0)) / skuTotalA;
+    const pricingScoreB = ((b.ingredients_with_skus ?? 0) + (b.ingredients_unavailable ?? 0)) / skuTotalB;
+    const scoreA = ((a.ingredients_added || 0) / (a.ingredients_total || 1) + pricingScoreA) / 2;
+    const scoreB = ((b.ingredients_added || 0) / (b.ingredients_total || 1) + pricingScoreB) / 2;
     return scoreA - scoreB;
   });
   const allDone = fileProgress.length > 0 && fileProgress.every(
-    (f) => (f.ingredients_added >= (f.ingredients_total || 1)) && (f.ingredients_with_skus >= (f.sku_total || f.ingredients_total || 1))
+    (f) => {
+      const skuTotal = f.sku_total || f.ingredients_total || 1;
+      const pricingDone = (f.ingredients_with_skus ?? 0) + (f.ingredients_unavailable ?? 0) >= skuTotal;
+      return (f.ingredients_added >= (f.ingredients_total || 1)) && pricingDone;
+    }
   );
   const showProgressBars = isUploading || (!allDone && fileProgress.length > 0);
   const showExpandable = fileProgress.length > 2;
@@ -267,7 +229,7 @@ export default function App() {
           className="mb-8 rounded-xl border border-border bg-card/80 backdrop-blur-sm px-4 py-3 flex flex-wrap items-center gap-4"
         >
           {location.error && (
-            <span className="text-accent text-sm">{location.error}</span>
+            <span className="text-muted-foreground text-sm">{location.error}</span>
           )}
           {!location.error && location.postal_code && (
             <span className="text-sm text-muted-foreground">Location: {location.postal_code}</span>
@@ -416,8 +378,9 @@ export default function App() {
                           max={fp.ingredients_total || 1}
                           label="Ingredients"
                         />
-                        <ProgressBar
+                        <SegmentedProgressBar
                           value={fp.ingredients_with_skus ?? 0}
+                          unavailable={fp.ingredients_unavailable ?? 0}
                           max={fp.sku_total || fp.ingredients_total || 1}
                           label="Pricing"
                         />
@@ -712,7 +675,7 @@ export default function App() {
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-8 space-y-6 overflow-auto max-h-[70vh]"
+                className="mt-8 space-y-6"
               >
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-3 flex-wrap">
@@ -807,19 +770,30 @@ export default function App() {
                 {/* Menu card */}
                 {planResult.menu_card?.length > 0 && (
                   <div className="rounded-xl border border-border bg-secondary/30 p-5">
-                    <h3 className="font-display font-semibold text-foreground mb-4">Menu card</h3>
-                    <div className="space-y-4">
-                      {planResult.menu_card.map((dish, i) => (
-                        <div key={i} className="border-l-2 border-primary/50 pl-4">
-                          <h4 className="font-semibold text-foreground">{dish.name}</h4>
-                          <p className="text-sm text-muted-foreground mt-1">{dish.description}</p>
-                          <ul className="mt-2 text-sm text-muted-foreground space-y-0.5">
-                            {dish.ingredients?.map((ing, j) => (
-                              <li key={j}>• {ing}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
+                    <h3 className="font-display text-sm font-medium tracking-[0.12em] uppercase text-muted-foreground mb-4">Menu</h3>
+                    <div className="space-y-1.5">
+                      {planResult.menu_card.map((dish, i) => {
+                        const mealType = dish?.meal_type || "entree";
+                        const theme = MENU_THEME_STYLES[mealType] || MENU_THEME_STYLES.entree;
+                        return (
+                          <div
+                            key={i}
+                            className="rounded px-2.5 py-1.5"
+                            style={{ backgroundColor: theme.accentBg }}
+                          >
+                            <div className="flex gap-2">
+                              <div
+                                className="w-0.5 shrink-0 self-stretch rounded-full"
+                                style={{ backgroundColor: theme.borderColor }}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <h4 className="font-display font-medium text-foreground text-sm tracking-wide">{dish.name}</h4>
+                                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug line-clamp-2">{dish.description}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
